@@ -1,7 +1,9 @@
 import traceback
+from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from database import engine
 import models
@@ -36,6 +38,11 @@ app.include_router(problems.router)
 app.include_router(sessions.router)
 app.include_router(progress.router)
 app.include_router(topics.router)
+
+# Serve pre-generated playcard audio files
+AUDIO_DIR = Path(__file__).parent / "audio"
+AUDIO_DIR.mkdir(exist_ok=True)
+app.mount("/audio", StaticFiles(directory=str(AUDIO_DIR)), name="audio")
 
 
 @app.get("/health")

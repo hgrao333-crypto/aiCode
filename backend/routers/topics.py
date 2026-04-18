@@ -31,6 +31,8 @@ class PlayCardOut(BaseModel):
     title: str
     content: str
     order_index: int
+    ai_summary: str | None = None
+    audio_url: str | None = None  # e.g. "/audio/playcards/playcard_1.mp3"
 
 
 class ProblemBrief(BaseModel):
@@ -186,6 +188,8 @@ def get_topic(
                     title=pc.title,
                     content=pc.content,
                     order_index=pc.order_index,
+                    ai_summary=pc.ai_summary,
+                    audio_url=f"/audio/playcards/{pc.audio_file}" if pc.audio_file else None,
                 )
                 for pc in st.play_cards
             ],
