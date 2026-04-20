@@ -1,7 +1,7 @@
 import enum
-from datetime import datetime
+from datetime import datetime, date
 from sqlalchemy import (
-    Column, Integer, String, Float, Text, DateTime,
+    Column, Integer, String, Float, Text, DateTime, Date,
     ForeignKey, Enum, Boolean, JSON,
 )
 from sqlalchemy.orm import relationship
@@ -34,6 +34,66 @@ class User(Base):
     mastery_records = relationship("MasteryRecord", back_populates="user")
     gate_sessions = relationship("GateSession", back_populates="user")
     subtopic_progress = relationship("UserSubTopicProgress", back_populates="user")
+    stats = relationship("UserStats", back_populates="user", uselist=False)
+
+
+# ─── User stats (XP, levels, streaks) ────────────────────────────────────────
+
+XP_PER_PASS = 100
+XP_PER_PASS_ASSISTED = 50
+XP_PER_LEVEL = 200   # linear: level = xp // XP_PER_LEVEL + 1
+
+
+class UserStats(Base):
+    __tablename__ = "user_stats"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
+    xp = Column(Integer, default=0)
+    gates_passed = Column(Integer, default=0)
+    streak_days = Column(Integer, default=0)
+    last_active_date = Column(Date, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = relationship("User", back_populates="stats")
+
+
+def get_or_create_stats(db, user_id: int) -> "UserStats":
+    stats = db.query(UserStats).filter(UserStats.user_id == user_id).first()
+    if not stats:
+        stats = UserStats(user_id=user_id)
+        db.add(stats)
+        db.flush()
+    return stats
+
+
+def award_xp(db, user_id: int, xp_amount: int) -> dict:
+    """Award XP, update streak, return {xp_gained, new_xp, old_level, new_level}."""
+    stats = get_or_create_stats(db, user_id)
+    old_level = stats.xp // XP_PER_LEVEL + 1
+
+    stats.xp += xp_amount
+    stats.gates_passed += 1
+
+    today = date.today()
+    if stats.last_active_date is None:
+        stats.streak_days = 1
+    elif stats.last_active_date == today:
+        pass  # already counted today
+    elif (today - stats.last_active_date).days == 1:
+        stats.streak_days += 1
+    else:
+        stats.streak_days = 1
+    stats.last_active_date = today
+
+    new_level = stats.xp // XP_PER_LEVEL + 1
+    return {
+        "xp_gained": xp_amount,
+        "new_xp": stats.xp,
+        "old_level": old_level,
+        "new_level": new_level,
+        "streak_days": stats.streak_days,
+    }
 
 
 # ─── Curriculum ───────────────────────────────────────────────────────────────
@@ -51,6 +111,7 @@ class Topic(Base):
     level = Column(Integer, default=0)           # column in flowchart
     position_in_level = Column(Integer, default=0)  # row within column
     prerequisites = Column(JSON, default=list)   # list of topic slugs
+    course = Column(String, default="main")      # "main" | "demo" | custom
 
     subtopics = relationship("SubTopic", back_populates="topic",
                              order_by="SubTopic.order_index")
@@ -89,6 +150,32 @@ class PlayCard(Base):
     audio_file = Column(String, nullable=True)  # filename under audio/playcards/
 
     subtopic = relationship("SubTopic", back_populates="play_cards")
+    exercises = relationship("CheckpointExercise", back_populates="playcard",
+                             order_by="CheckpointExercise.order_index",
+                             cascade="all, delete-orphan")
+
+
+class CheckpointExercise(Base):
+    """An interactive exercise attached to a PlayCard (shown after audio/reading)."""
+    __tablename__ = "checkpoint_exercises"
+
+    id = Column(Integer, primary_key=True, index=True)
+    playcard_id = Column(Integer, ForeignKey("play_cards.id"), nullable=False)
+    # recognition | debugging | variation | teach_back
+    exercise_type = Column(String, nullable=False)
+    question = Column(Text, nullable=False)
+    # recognition only
+    options = Column(JSON, nullable=True)        # list[str]
+    correct_index = Column(Integer, nullable=True)
+    # debugging only
+    buggy_code = Column(Text, nullable=True)
+    # AI grading context (not sent to client)
+    grading_hints = Column(Text, nullable=True)
+    # shown after any answer
+    explanation = Column(Text, nullable=True)
+    order_index = Column(Integer, default=0)
+
+    playcard = relationship("PlayCard", back_populates="exercises")
 
 
 class YoutubeVideo(Base):

@@ -96,11 +96,34 @@ export async function runCode(problem_slug: string, code: string): Promise<RunRe
   });
 }
 
+export interface XPResult {
+  xp_gained: number;
+  new_xp: number;
+  old_level: number;
+  new_level: number;
+  streak_days: number;
+}
+
 export interface AnswerResponse {
   verdict: "PASS" | "FAIL" | "STUCK";
   follow_up: string;
   teaching: string;
   session_outcome: string;
+  xp: XPResult | null;
+}
+
+export interface UserStats {
+  xp: number;
+  level: number;
+  xp_in_level: number;
+  xp_to_next: number;
+  gates_passed: number;
+  streak_days: number;
+  badges: Array<{ id: string; icon: string; label: string; desc: string }>;
+}
+
+export async function getUserStats(): Promise<UserStats> {
+  return request("/api/progress/stats");
 }
 
 export async function submitAnswer(
@@ -136,6 +159,23 @@ export interface TopicListItem {
   unlocked: boolean;
 }
 
+export interface CheckpointExercise {
+  id: number;
+  exercise_type: "recognition" | "debugging" | "variation" | "teach_back";
+  question: string;
+  options?: string[] | null;
+  correct_index?: number | null;
+  buggy_code?: string | null;
+  explanation?: string | null;
+  order_index: number;
+}
+
+export interface ExerciseAnswerResult {
+  correct: boolean;
+  feedback: string;
+  explanation?: string | null;
+}
+
 export interface PlayCard {
   id: number;
   title: string;
@@ -143,6 +183,7 @@ export interface PlayCard {
   order_index: number;
   ai_summary?: string | null;
   audio_url?: string | null;
+  exercises: CheckpointExercise[];
 }
 
 export interface SubTopicDetail {
@@ -153,7 +194,7 @@ export interface SubTopicDetail {
   order_index: number;
   gate_passed: boolean;
   play_cards: PlayCard[];
-  problems: Array<{ id: number; slug: string; title: string; difficulty: string }>;
+  problems: Array<{ id: number; slug: string; title: string; difficulty: string; gate_passed: boolean }>;
 }
 
 export interface TopicDetail {
@@ -168,12 +209,23 @@ export interface TopicDetail {
   subtopics: SubTopicDetail[];
 }
 
-export async function listTopics(): Promise<TopicListItem[]> {
-  return request("/api/topics/");
+export async function listTopics(course = "main"): Promise<TopicListItem[]> {
+  return request(`/api/topics/?course=${course}`);
 }
 
 export async function getTopic(slug: string): Promise<TopicDetail> {
   return request(`/api/topics/${slug}`);
+}
+
+export async function answerExercise(
+  exerciseId: number,
+  answer: string,
+  selectedIndex?: number | null
+): Promise<ExerciseAnswerResult> {
+  return request(`/api/topics/exercises/${exerciseId}/answer`, {
+    method: "POST",
+    body: JSON.stringify({ answer, selected_index: selectedIndex ?? null }),
+  });
 }
 
 export async function chatWithPlaycard(
@@ -186,3 +238,44 @@ export async function chatWithPlaycard(
     body: JSON.stringify({ message, history }),
   });
 }
+
+// ── Admin ─────────────────────────────────────────────────────────────────────
+
+export interface AdminOverview { topics: number; subtopics: number; playcards: number; problems: number; users: number }
+export interface AdminTopic { id: number; slug: string; title: string; description: string; icon: string; color: string; level: number; position_in_level: number; prerequisites: string[]; subtopics_count: number }
+export interface AdminPlayCard { id: number; title: string; content: string; order_index: number; ai_summary?: string | null; audio_file?: string | null }
+export interface AdminExercise { id: number; playcard_id: number; exercise_type: string; question: string; options?: string[] | null; correct_index?: number | null; buggy_code?: string | null; grading_hints?: string | null; explanation?: string | null; order_index: number }
+export interface AdminSubTopic { id: number; slug: string; title: string; description: string; order_index: number; play_cards: AdminPlayCard[]; problems: Array<{ id: number; slug: string; title: string; difficulty: string; order_index: number }> }
+export interface AdminTopicDetail extends Omit<AdminTopic, "subtopics_count"> { subtopics: AdminSubTopic[]; videos: Array<{ id: number; title: string; youtube_id: string; order_index: number }> }
+export interface AdminProblem { id: number; slug: string; title: string; topic: string; subtopic_id: number | null; difficulty: string; order_index: number; concepts: string[]; description: string; starter_code: string; solution_code: string; test_cases: unknown[] }
+
+export const adminApi = {
+  overview: () => request<AdminOverview>("/api/admin/overview"),
+  listTopics: () => request<AdminTopic[]>("/api/admin/topics"),
+  topicDetail: (id: number) => request<AdminTopicDetail>(`/api/admin/topics/${id}/detail`),
+  createTopic: (data: object) => request<{ id: number; slug: string }>("/api/admin/topics", { method: "POST", body: JSON.stringify(data) }),
+  updateTopic: (id: number, data: object) => request("/api/admin/topics/" + id, { method: "PUT", body: JSON.stringify(data) }),
+  deleteTopic: (id: number) => request("/api/admin/topics/" + id, { method: "DELETE" }),
+
+  listSubtopics: () => request<Array<{ id: number; slug: string; title: string; order_index: number; topic_title: string; topic_slug: string }>>("/api/admin/subtopics"),
+  createSubtopic: (data: object) => request<{ id: number }>("/api/admin/subtopics", { method: "POST", body: JSON.stringify(data) }),
+  updateSubtopic: (id: number, data: object) => request("/api/admin/subtopics/" + id, { method: "PUT", body: JSON.stringify(data) }),
+  deleteSubtopic: (id: number) => request("/api/admin/subtopics/" + id, { method: "DELETE" }),
+
+  createPlaycard: (data: object) => request<{ id: number }>("/api/admin/playcards", { method: "POST", body: JSON.stringify(data) }),
+  updatePlaycard: (id: number, data: object) => request("/api/admin/playcards/" + id, { method: "PUT", body: JSON.stringify(data) }),
+  deletePlaycard: (id: number) => request("/api/admin/playcards/" + id, { method: "DELETE" }),
+
+  listExercises: (playcardId: number) => request<AdminExercise[]>(`/api/admin/playcards/${playcardId}/exercises`),
+  createExercise: (data: object) => request<{ id: number }>("/api/admin/exercises", { method: "POST", body: JSON.stringify(data) }),
+  updateExercise: (id: number, data: object) => request("/api/admin/exercises/" + id, { method: "PUT", body: JSON.stringify(data) }),
+  deleteExercise: (id: number) => request("/api/admin/exercises/" + id, { method: "DELETE" }),
+
+  createVideo: (data: object) => request<{ id: number }>("/api/admin/videos", { method: "POST", body: JSON.stringify(data) }),
+  deleteVideo: (id: number) => request("/api/admin/videos/" + id, { method: "DELETE" }),
+
+  listProblems: () => request<AdminProblem[]>("/api/admin/problems"),
+  createProblem: (data: object) => request<{ id: number; slug: string }>("/api/admin/problems", { method: "POST", body: JSON.stringify(data) }),
+  updateProblem: (id: number, data: object) => request("/api/admin/problems/" + id, { method: "PUT", body: JSON.stringify(data) }),
+  deleteProblem: (id: number) => request("/api/admin/problems/" + id, { method: "DELETE" }),
+};

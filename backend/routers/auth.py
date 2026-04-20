@@ -49,4 +49,4 @@ def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get
 
 @router.get("/me")
 def me(current_user: models.User = Depends(__import__("auth").get_current_user)):
-    return {"id": current_user.id, "email": current_user.email}
+    return {"id": current_user.id, "email": current_user.email, "is_admin": current_user.is_admin}

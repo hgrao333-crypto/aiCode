@@ -5,7 +5,7 @@ GET  /api/topics/                        — all topics with user unlock status
 GET  /api/topics/{slug}                  — topic detail: subtopics, videos, playcards
 POST /api/topics/playcards/{id}/chat     — AI chat about a specific playcard
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
@@ -26,13 +26,25 @@ class VideoOut(BaseModel):
     order_index: int
 
 
+class ExerciseOut(BaseModel):
+    id: int
+    exercise_type: str
+    question: str
+    options: list[str] | None = None
+    correct_index: int | None = None
+    buggy_code: str | None = None
+    explanation: str | None = None
+    order_index: int
+
+
 class PlayCardOut(BaseModel):
     id: int
     title: str
     content: str
     order_index: int
     ai_summary: str | None = None
-    audio_url: str | None = None  # e.g. "/audio/playcards/playcard_1.mp3"
+    audio_url: str | None = None
+    exercises: list[ExerciseOut] = []
 
 
 class ProblemBrief(BaseModel):
@@ -40,6 +52,7 @@ class ProblemBrief(BaseModel):
     slug: str
     title: str
     difficulty: str
+    gate_passed: bool = False
 
 
 class SubTopicOut(BaseModel):
@@ -95,9 +108,11 @@ class ChatResponse(BaseModel):
 def list_topics(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
+    course: str = Query("main"),
 ):
     topics = (
         db.query(models.Topic)
+        .filter(models.Topic.course == course)
         .order_by(models.Topic.level, models.Topic.position_in_level)
         .all()
     )
@@ -174,6 +189,18 @@ def get_topic(
         )
     }
 
+    all_problem_ids = [p.id for st in topic.subtopics for p in st.problems]
+    passed_problem_ids: set[int] = set()
+    if all_problem_ids:
+        passed_problem_ids = {
+            r.problem_id
+            for r in db.query(models.GateSession.problem_id).filter(
+                models.GateSession.user_id == current_user.id,
+                models.GateSession.problem_id.in_(all_problem_ids),
+                models.GateSession.outcome == "PASS",
+            ).all()
+        }
+
     subtopics_out = [
         SubTopicOut(
             id=st.id,
@@ -190,6 +217,19 @@ def get_topic(
                     order_index=pc.order_index,
                     ai_summary=pc.ai_summary,
                     audio_url=f"/audio/playcards/{pc.audio_file}" if pc.audio_file else None,
+                    exercises=[
+                        ExerciseOut(
+                            id=ex.id,
+                            exercise_type=ex.exercise_type,
+                            question=ex.question,
+                            options=ex.options,
+                            correct_index=ex.correct_index,
+                            buggy_code=ex.buggy_code,
+                            explanation=ex.explanation,
+                            order_index=ex.order_index,
+                        )
+                        for ex in pc.exercises
+                    ],
                 )
                 for pc in st.play_cards
             ],
@@ -199,8 +239,9 @@ def get_topic(
                     slug=p.slug,
                     title=p.title,
                     difficulty=p.difficulty,
+                    gate_passed=p.id in passed_problem_ids,
                 )
-                for p in st.problems
+                for p in sorted(st.problems, key=lambda p: {"easy": 0, "medium": 1, "hard": 2}.get(p.difficulty, 3))
             ],
         )
         for st in topic.subtopics
@@ -225,6 +266,52 @@ def get_topic(
         ],
         subtopics=subtopics_out,
     )
+
+
+class ExerciseAnswerRequest(BaseModel):
+    answer: str = ""
+    selected_index: int | None = None
+
+
+class ExerciseAnswerResponse(BaseModel):
+    correct: bool
+    feedback: str
+    explanation: str | None = None
+
+
+@router.post("/exercises/{exercise_id}/answer", response_model=ExerciseAnswerResponse)
+def answer_exercise(
+    exercise_id: int,
+    req: ExerciseAnswerRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    ex = db.query(models.CheckpointExercise).filter_by(id=exercise_id).first()
+    if not ex:
+        raise HTTPException(status_code=404, detail="Exercise not found")
+
+    if ex.exercise_type == "recognition":
+        if req.selected_index is None:
+            return ExerciseAnswerResponse(correct=False, feedback="No option selected.", explanation=ex.explanation)
+        correct = req.selected_index == ex.correct_index
+        if correct:
+            feedback = "Correct! Great pattern recognition."
+        else:
+            feedback = se.grade_recognition_wrong(
+                ex.question, ex.options or [], ex.correct_index or 0, req.selected_index
+            )
+    else:
+        if not req.answer.strip():
+            return ExerciseAnswerResponse(correct=False, feedback="Please write a response before submitting.", explanation=ex.explanation)
+        feedback, correct = se.grade_exercise(
+            exercise_type=ex.exercise_type,
+            question=ex.question,
+            buggy_code=ex.buggy_code,
+            grading_hints=ex.grading_hints or "",
+            student_answer=req.answer,
+        )
+
+    return ExerciseAnswerResponse(correct=correct, feedback=feedback, explanation=ex.explanation)
 
 
 @router.post("/playcards/{playcard_id}/chat", response_model=ChatResponse)

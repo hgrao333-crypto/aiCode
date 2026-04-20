@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from database import engine
 import models
-from routers import auth, problems, sessions, progress, topics
+from routers import auth, problems, sessions, progress, topics, admin
 
 # Create all tables on startup
 models.Base.metadata.create_all(bind=engine)
@@ -38,6 +38,7 @@ app.include_router(problems.router)
 app.include_router(sessions.router)
 app.include_router(progress.router)
 app.include_router(topics.router)
+app.include_router(admin.router)
 
 # Serve pre-generated playcard audio files
 AUDIO_DIR = Path(__file__).parent / "audio"

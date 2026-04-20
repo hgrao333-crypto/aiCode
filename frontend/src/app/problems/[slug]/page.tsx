@@ -12,9 +12,46 @@ import {
   Problem,
   RunResponse,
   AnswerResponse,
+  XPResult,
 } from "@/lib/api";
 
 const MonacoEditor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
+
+// ── XP Toast ─────────────────────────────────────────────────────────────────
+
+function XPToast({ result, onDone }: { result: XPResult; onDone: () => void }) {
+  const levelUp = result.new_level > result.old_level;
+  useEffect(() => {
+    const t = setTimeout(onDone, levelUp ? 3500 : 2500);
+    return () => clearTimeout(t);
+  }, [onDone, levelUp]);
+
+  return (
+    <div className="fixed inset-0 pointer-events-none z-50 flex flex-col items-center justify-start pt-20 gap-3">
+      {/* XP gained */}
+      <div className="animate-bounce-up px-5 py-2 rounded-full bg-indigo-600 border border-indigo-400 text-white font-bold text-lg shadow-lg shadow-indigo-900/50">
+        +{result.xp_gained} XP
+      </div>
+
+      {/* Level up */}
+      {levelUp && (
+        <div className="animate-bounce-up-slow px-6 py-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 border border-amber-300 text-white text-center shadow-xl shadow-amber-900/50">
+          <div className="text-2xl font-black">Level Up! 🎉</div>
+          <div className="text-sm font-medium opacity-90">
+            Level {result.old_level} → Level {result.new_level}
+          </div>
+        </div>
+      )}
+
+      {/* Streak */}
+      {result.streak_days >= 2 && (
+        <div className="animate-bounce-up-slow px-4 py-1.5 rounded-full bg-orange-900/80 border border-orange-600 text-orange-300 text-sm font-semibold">
+          🔥 {result.streak_days}-day streak
+        </div>
+      )}
+    </div>
+  );
+}
 
 type Phase =
   | "editing"
@@ -55,6 +92,7 @@ export default function ProblemPage() {
   const [answer, setAnswer] = useState("");
   const [turnCount, setTurnCount] = useState(0);
   const [leftTab, setLeftTab] = useState<"problem" | "editor">("problem");
+  const [xpToast, setXpToast] = useState<XPResult | null>(null);
 
   const chatBottomRef = useRef<HTMLDivElement>(null);
   const answerRef = useRef<HTMLTextAreaElement>(null);
@@ -143,6 +181,7 @@ export default function ProblemPage() {
         ]);
         setCurrentQuestion("");
         setPhase(assisted ? "passed_assisted" : "passed");
+        if (res.xp) setXpToast(res.xp);
 
       } else if (res.verdict === "FAIL") {
         if (res.follow_up) {
@@ -211,6 +250,9 @@ export default function ProblemPage() {
 
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-gray-950">
+      {/* ── XP Toast ── */}
+      {xpToast && <XPToast result={xpToast} onDone={() => setXpToast(null)} />}
+
       {/* ── Nav ── */}
       <nav className="shrink-0 border-b border-gray-800 px-4 h-10 flex items-center gap-3">
         <Link href="/problems" className="text-gray-500 hover:text-white text-xs transition-colors">

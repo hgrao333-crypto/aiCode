@@ -36,11 +36,20 @@ class AnswerRequest(BaseModel):
     answer: str
 
 
+class XPResult(BaseModel):
+    xp_gained: int
+    new_xp: int
+    old_level: int
+    new_level: int
+    streak_days: int
+
+
 class AnswerResponse(BaseModel):
     verdict: str               # PASS | FAIL | STUCK
     follow_up: str             # next question (if FAIL)
     teaching: str              # teaching block (if STUCK)
     session_outcome: str       # "" | "PASS" | "PASS_ASSISTED"
+    xp: XPResult | None = None  # only set when verdict is PASS / PASS_ASSISTED
 
 
 class SessionState(BaseModel):
@@ -140,6 +149,7 @@ def answer(
     follow_up = eval_result.get("follow_up", "")
     teaching = ""
     session_outcome = ""
+    xp_result = None
 
     # Update current turn
     current_turn.student_answer = req.answer
@@ -150,6 +160,7 @@ def answer(
         session.outcome = session_outcome
         _update_mastery(db, current_user.id, problem.concepts, assisted=False)
         _mark_subtopic_passed(db, current_user.id, problem.subtopic_id)
+        xp_result = models.award_xp(db, current_user.id, models.XP_PER_PASS)
 
     elif verdict == "STUCK":
         # Collect all failed answers for teaching context
@@ -202,6 +213,7 @@ def answer(
         session_outcome = "PASS_ASSISTED"
         _update_mastery(db, current_user.id, problem.concepts, assisted=True)
         _mark_subtopic_passed(db, current_user.id, problem.subtopic_id)
+        xp_result = models.award_xp(db, current_user.id, models.XP_PER_PASS_ASSISTED)
 
     db.commit()
 
@@ -210,6 +222,7 @@ def answer(
         follow_up=follow_up,
         teaching=teaching,
         session_outcome=session_outcome,
+        xp=XPResult(**xp_result) if xp_result else None,
     )
 
 

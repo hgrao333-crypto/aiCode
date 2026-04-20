@@ -5,6 +5,7 @@ import { getMe, login as apiLogin, register as apiRegister } from "@/lib/api";
 interface User {
   id: number;
   email: string;
+  is_admin: boolean;
 }
 
 interface AuthCtx {

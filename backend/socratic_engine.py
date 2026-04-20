@@ -235,6 +235,78 @@ Generate a teaching response targeting the gap revealed by these attempts."""
     return response.content[0].text.strip()
 
 
+EXERCISE_GRADE_SYSTEM = """You are grading a student's answer to an exercise about algorithms and data structures.
+Be fair and encouraging. Give credit for partial understanding.
+
+Respond with raw JSON only — no markdown fences:
+{"correct": true/false, "feedback": "1-2 encouraging sentences"}
+
+Guidelines by type:
+- debugging: correct=true if student identified the actual bug and explained why it causes wrong output.
+- variation: correct=true if student shows sound conceptual reasoning — there is no single right answer, reward good thinking.
+- teach_back: correct=true if the explanation is accurate AND clear enough for a beginner to follow.
+
+Never give correct=false for a technically sound answer just because it uses different wording.
+Output raw JSON only."""
+
+
+def grade_exercise(
+    exercise_type: str,
+    question: str,
+    buggy_code: str | None,
+    grading_hints: str,
+    student_answer: str,
+) -> tuple[str, bool]:
+    """Grade a free-text exercise answer. Returns (feedback, correct)."""
+    code_block = f"\nBuggy code:\n```python\n{buggy_code}\n```\n" if buggy_code else ""
+    user_msg = (
+        f"Exercise type: {exercise_type}\n"
+        f"Question: {question}{code_block}\n"
+        f"What to look for: {grading_hints}\n"
+        f"Student answer: {student_answer}\n\nGrade this answer."
+    )
+    response = client.messages.create(
+        model=HAIKU,
+        max_tokens=256,
+        system=EXERCISE_GRADE_SYSTEM,
+        messages=[{"role": "user", "content": user_msg}],
+    )
+    raw = response.content[0].text.strip()
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+        raw = raw.strip()
+    try:
+        result = json.loads(raw)
+        return result.get("feedback", ""), bool(result.get("correct", False))
+    except json.JSONDecodeError:
+        return "Couldn't evaluate answer — please try again.", False
+
+
+def grade_recognition_wrong(
+    question: str,
+    options: list[str],
+    correct_index: int,
+    selected_index: int,
+) -> str:
+    """For wrong MCQ answers, explain why the correct answer is right in 1-2 sentences."""
+    user_msg = (
+        f"Question: {question}\n"
+        f"Options: {', '.join(f'{i}. {o}' for i, o in enumerate(options))}\n"
+        f"Correct: Option {correct_index} — {options[correct_index]}\n"
+        f"Student chose: Option {selected_index} — {options[selected_index]}\n\n"
+        "In 1-2 sentences explain why the correct answer is right."
+    )
+    response = client.messages.create(
+        model=HAIKU,
+        max_tokens=128,
+        system="You are a concise coding tutor. Explain MCQ answers kindly in 1-2 sentences.",
+        messages=[{"role": "user", "content": user_msg}],
+    )
+    return response.content[0].text.strip()
+
+
 def chat_about_playcard(
     playcard_title: str,
     playcard_content: str,
