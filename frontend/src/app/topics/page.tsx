@@ -6,7 +6,7 @@ import { listTopics, getUserStats, TopicListItem, UserStats } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 
 const COLOR_MAP: Record<string, { bg: string; border: string; text: string; icon: string }> = {
-  indigo:  { bg: "bg-indigo-950",  border: "border-indigo-700",  text: "text-indigo-300",  icon: "bg-indigo-700"  },
+  indigo:  { bg: "bg-cyan-950",  border: "border-cyan-700",  text: "text-cyan-300",  icon: "bg-cyan-700"  },
   blue:    { bg: "bg-blue-950",    border: "border-blue-700",    text: "text-blue-300",    icon: "bg-blue-700"    },
   cyan:    { bg: "bg-cyan-950",    border: "border-cyan-700",    text: "text-cyan-300",    icon: "bg-cyan-700"    },
   teal:    { bg: "bg-teal-950",    border: "border-teal-700",    text: "text-teal-300",    icon: "bg-teal-700"    },
@@ -25,10 +25,10 @@ function getColors(color: string, unlocked: boolean) {
   const c = COLOR_MAP[color] ?? COLOR_MAP.indigo;
   if (!unlocked) {
     return {
-      bg: "bg-gray-900",
-      border: "border-gray-800",
-      text: "text-gray-600",
-      icon: "bg-gray-800",
+      bg: "bg-slate-800",
+      border: "border-slate-700/50",
+      text: "text-slate-500",
+      icon: "bg-slate-700",
     };
   }
   return c;
@@ -38,13 +38,13 @@ function ProgressBar({ passed, total }: { passed: number; total: number }) {
   const pct = total === 0 ? 0 : Math.round((passed / total) * 100);
   return (
     <div className="mt-3">
-      <div className="flex justify-between text-xs text-gray-500 mb-1">
+      <div className="flex justify-between text-xs text-slate-400 mb-1">
         <span>{passed}/{total} subtopics</span>
         <span>{pct}%</span>
       </div>
-      <div className="h-1 bg-gray-800 rounded-full overflow-hidden">
+      <div className="h-1 bg-slate-700 rounded-full overflow-hidden">
         <div
-          className="h-full bg-indigo-500 rounded-full transition-all"
+          className="h-full bg-cyan-500 rounded-full transition-all"
           style={{ width: `${pct}%` }}
         />
       </div>
@@ -73,7 +73,7 @@ function TopicCard({ topic }: { topic: TopicListItem }) {
 
       {/* Lock overlay */}
       {!topic.unlocked && (
-        <div className="absolute top-3 right-3 text-gray-600 text-sm">🔒</div>
+        <div className="absolute top-3 right-3 text-slate-500 text-sm">🔒</div>
       )}
 
       {/* Icon + Title */}
@@ -82,10 +82,10 @@ function TopicCard({ topic }: { topic: TopicListItem }) {
           {topic.icon}
         </div>
         <div className="min-w-0">
-          <div className={`font-semibold text-sm leading-tight ${topic.unlocked ? "text-white" : "text-gray-600"}`}>
+          <div className={`font-semibold text-sm leading-tight ${topic.unlocked ? "text-white" : "text-slate-500"}`}>
             {topic.title}
           </div>
-          <div className="text-xs text-gray-500 mt-0.5 line-clamp-2">{topic.description}</div>
+          <div className="text-xs text-slate-400 mt-0.5 line-clamp-2">{topic.description}</div>
         </div>
       </div>
 
@@ -93,7 +93,7 @@ function TopicCard({ topic }: { topic: TopicListItem }) {
       {topic.prerequisites.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1">
           {topic.prerequisites.map((p) => (
-            <span key={p} className="text-xs px-1.5 py-0.5 rounded bg-gray-800 text-gray-500">
+            <span key={p} className="text-xs px-1.5 py-0.5 rounded bg-slate-700 text-slate-400">
               {p.replace(/-/g, " ")}
             </span>
           ))}
@@ -115,15 +115,15 @@ function NavXP({ stats }: { stats: UserStats | null }) {
   const pct = Math.round((stats.xp_in_level / stats.xp_to_next) * 100);
   return (
     <div className="flex items-center gap-2">
-      <div className="flex items-center gap-1.5 bg-gray-900 border border-gray-700 rounded-full px-3 py-1">
-        <span className="text-indigo-400 text-xs font-bold">Lv.{stats.level}</span>
-        <div className="w-20 h-1.5 bg-gray-700 rounded-full overflow-hidden">
+      <div className="flex items-center gap-1.5 bg-slate-800 border border-slate-600/50 rounded-full px-3 py-1">
+        <span className="text-cyan-400 text-xs font-bold">Lv.{stats.level}</span>
+        <div className="w-20 h-1.5 bg-slate-600 rounded-full overflow-hidden">
           <div
-            className="h-full bg-indigo-500 rounded-full transition-all duration-500"
+            className="h-full bg-cyan-500 rounded-full transition-all duration-500"
             style={{ width: `${pct}%` }}
           />
         </div>
-        <span className="text-gray-500 text-xs">{stats.xp} XP</span>
+        <span className="text-slate-400 text-xs">{stats.xp} XP</span>
       </div>
       {stats.streak_days >= 2 && (
         <span className="text-xs text-orange-400 font-semibold">🔥{stats.streak_days}</span>
@@ -161,25 +161,25 @@ export default function TopicsPage() {
   if (authLoading || loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="text-gray-500 text-sm">Loading curriculum...</div>
+        <div className="text-slate-400 text-sm">Loading curriculum...</div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-slate-900">
       {/* Nav */}
-      <nav className="border-b border-gray-800 px-6 py-3 flex items-center justify-between">
+      <nav className="border-b border-slate-700/50 px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-6">
           <Link href="/topics" className="text-white font-bold text-lg">Logos</Link>
-          <Link href="/topics" className="text-indigo-400 text-sm">Curriculum</Link>
-          <Link href="/problems" className="text-gray-400 text-sm hover:text-white transition-colors">Problems</Link>
+          <Link href="/topics" className="text-cyan-400 text-sm">Curriculum</Link>
+          <Link href="/problems" className="text-slate-300 text-sm hover:text-white transition-colors">Problems</Link>
           <Link href="/demo" className="text-emerald-400 text-sm hover:text-emerald-300 transition-colors">Demo Course</Link>
         </div>
         <div className="flex items-center gap-4 text-sm">
           <NavXP stats={stats} />
-          <span className="text-gray-500 hidden sm:block">{user?.email}</span>
-          <button onClick={logout} className="text-gray-400 hover:text-white transition-colors">
+          <span className="text-slate-400 hidden sm:block">{user?.email}</span>
+          <button onClick={logout} className="text-slate-300 hover:text-white transition-colors">
             Sign out
           </button>
         </div>
@@ -188,7 +188,7 @@ export default function TopicsPage() {
       <main className="px-6 py-8">
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-white">Algorithm Curriculum</h1>
-          <p className="text-gray-400 text-sm mt-1">
+          <p className="text-slate-300 text-sm mt-1">
             Complete each topic to unlock the next. Pass the gate for every subtopic to advance.
           </p>
         </div>
@@ -201,7 +201,7 @@ export default function TopicsPage() {
             {levels.map((levelTopics, level) => (
               <div key={level} className="flex flex-col gap-4">
                 {/* Level label */}
-                <div className="text-xs text-gray-600 font-medium text-center px-2">
+                <div className="text-xs text-slate-500 font-medium text-center px-2">
                   {level === 0 ? "Start" : `Level ${level}`}
                 </div>
 
@@ -222,13 +222,13 @@ export default function TopicsPage() {
         </div>
 
         {/* Legend */}
-        <div className="mt-8 flex flex-wrap gap-4 text-xs text-gray-500">
+        <div className="mt-8 flex flex-wrap gap-4 text-xs text-slate-400">
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded bg-indigo-700" />
+            <div className="w-3 h-3 rounded bg-cyan-700" />
             <span>Unlocked</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded bg-gray-800 border border-gray-700" />
+            <div className="w-3 h-3 rounded bg-slate-700 border border-slate-600/50" />
             <span>Locked (complete prerequisites first)</span>
           </div>
           <div className="flex items-center gap-2">

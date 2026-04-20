@@ -3,6 +3,7 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     anthropic_api_key: str = ""
+    gemini_api_key: str = ""
     secret_key: str = "dev-secret-key-change-in-production"
     database_url: str = "sqlite:///./logos.db"
     algorithm: str = "HS256"

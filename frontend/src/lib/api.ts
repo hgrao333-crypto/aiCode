@@ -183,6 +183,7 @@ export interface PlayCard {
   order_index: number;
   ai_summary?: string | null;
   audio_url?: string | null;
+  image_url?: string | null;
   exercises: CheckpointExercise[];
 }
 

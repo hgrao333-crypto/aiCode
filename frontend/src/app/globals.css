@@ -2,8 +2,9 @@
 @plugin "@tailwindcss/typography";
 
 :root {
-  --background: #030712;
-  --foreground: #f9fafb;
+  --background: #0F172A;   /* Deep Navy — slate-900 */
+  --foreground: #F1F5F9;   /* Off-White — slate-100 */
+  --accent: #06B6D4;        /* Electric Cyan — cyan-500 */
   --font-mono: var(--font-mono);
 }
 
@@ -38,9 +39,9 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #374151;
+  background: #1E3A4A;
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #4b5563;
+  background: #06B6D4;
 }

@@ -6,6 +6,7 @@ GET  /api/topics/{slug}                  — topic detail: subtopics, videos, pl
 POST /api/topics/playcards/{id}/chat     — AI chat about a specific playcard
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
+import anthropic as _anthropic
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
@@ -44,6 +45,7 @@ class PlayCardOut(BaseModel):
     order_index: int
     ai_summary: str | None = None
     audio_url: str | None = None
+    image_url: str | None = None
     exercises: list[ExerciseOut] = []
 
 
@@ -217,6 +219,7 @@ def get_topic(
                     order_index=pc.order_index,
                     ai_summary=pc.ai_summary,
                     audio_url=f"/audio/playcards/{pc.audio_file}" if pc.audio_file else None,
+                    image_url=pc.image_url,
                     exercises=[
                         ExerciseOut(
                             id=ex.id,
@@ -297,19 +300,27 @@ def answer_exercise(
         if correct:
             feedback = "Correct! Great pattern recognition."
         else:
-            feedback = se.grade_recognition_wrong(
-                ex.question, ex.options or [], ex.correct_index or 0, req.selected_index
-            )
+            try:
+                feedback = se.grade_recognition_wrong(
+                    ex.question, ex.options or [], ex.correct_index or 0, req.selected_index
+                )
+            except (_anthropic.AuthenticationError, Exception):
+                feedback = f"Incorrect. The right answer was option {chr(65 + (ex.correct_index or 0))}."
     else:
         if not req.answer.strip():
             return ExerciseAnswerResponse(correct=False, feedback="Please write a response before submitting.", explanation=ex.explanation)
-        feedback, correct = se.grade_exercise(
-            exercise_type=ex.exercise_type,
-            question=ex.question,
-            buggy_code=ex.buggy_code,
-            grading_hints=ex.grading_hints or "",
-            student_answer=req.answer,
-        )
+        try:
+            feedback, correct = se.grade_exercise(
+                exercise_type=ex.exercise_type,
+                question=ex.question,
+                buggy_code=ex.buggy_code,
+                grading_hints=ex.grading_hints or "",
+                student_answer=req.answer,
+            )
+        except _anthropic.AuthenticationError:
+            raise HTTPException(status_code=503, detail="AI grading unavailable — invalid API key in backend/.env")
+        except Exception:
+            raise HTTPException(status_code=503, detail="AI grading temporarily unavailable")
 
     return ExerciseAnswerResponse(correct=correct, feedback=feedback, explanation=ex.explanation)
 

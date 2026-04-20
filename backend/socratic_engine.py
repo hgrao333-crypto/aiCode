@@ -1,20 +1,24 @@
 """
-Socratic engine — all interactions with the Anthropic API.
+Socratic engine — AI calls for the platform.
 
-Three responsibilities:
-1. generate_gate_question  — first question when student clicks Run
-2. evaluate_answer         — judge student answer → PASS / FAIL / STUCK + follow-up
-3. generate_teaching       — explanation + walkthrough + verification question
+Anthropic (Claude): gate questions, answer evaluation, teaching (coding problem flow)
+Gemini Flash (free): playcard chat, exercise grading
 """
 import json
 from anthropic import Anthropic
+from google import genai
+from google.genai import types as gtypes  # noqa: F401 — used in generate_content calls
 from config import settings
 
 client = Anthropic(api_key=settings.anthropic_api_key)
+gemini = genai.Client(api_key=settings.gemini_api_key)
 
-# Haiku for everything — fastest latency, lowest cost
+# Anthropic models
 HAIKU = "claude-haiku-4-5-20251001"
-SONNET = HAIKU  # teaching also uses Haiku; swap to claude-sonnet-4-6 if quality suffers
+SONNET = HAIKU
+
+# Gemini free model
+GEMINI_FLASH = "gemini-2.0-flash-lite"
 
 MAX_TURNS = 4  # follow-up questions before teaching triggers
 
@@ -250,6 +254,16 @@ Never give correct=false for a technically sound answer just because it uses dif
 Output raw JSON only."""
 
 
+def _gemini_text(prompt: str, max_tokens: int = 256) -> str:
+    """Single-turn Gemini call. Returns the text response."""
+    response = gemini.models.generate_content(
+        model=GEMINI_FLASH,
+        contents=prompt,
+        config=gtypes.GenerateContentConfig(max_output_tokens=max_tokens),
+    )
+    return response.text.strip()
+
+
 def grade_exercise(
     exercise_type: str,
     question: str,
@@ -257,21 +271,16 @@ def grade_exercise(
     grading_hints: str,
     student_answer: str,
 ) -> tuple[str, bool]:
-    """Grade a free-text exercise answer. Returns (feedback, correct)."""
+    """Grade a free-text exercise answer using Gemini. Returns (feedback, correct)."""
     code_block = f"\nBuggy code:\n```python\n{buggy_code}\n```\n" if buggy_code else ""
-    user_msg = (
+    prompt = (
+        f"{EXERCISE_GRADE_SYSTEM}\n\n"
         f"Exercise type: {exercise_type}\n"
         f"Question: {question}{code_block}\n"
         f"What to look for: {grading_hints}\n"
         f"Student answer: {student_answer}\n\nGrade this answer."
     )
-    response = client.messages.create(
-        model=HAIKU,
-        max_tokens=256,
-        system=EXERCISE_GRADE_SYSTEM,
-        messages=[{"role": "user", "content": user_msg}],
-    )
-    raw = response.content[0].text.strip()
+    raw = _gemini_text(prompt, max_tokens=256)
     if raw.startswith("```"):
         raw = raw.split("```")[1]
         if raw.startswith("json"):
@@ -290,21 +299,16 @@ def grade_recognition_wrong(
     correct_index: int,
     selected_index: int,
 ) -> str:
-    """For wrong MCQ answers, explain why the correct answer is right in 1-2 sentences."""
-    user_msg = (
+    """Explain a wrong MCQ answer in 1-2 sentences using Gemini."""
+    prompt = (
+        "You are a concise coding tutor. Explain MCQ answers kindly in 1-2 sentences.\n\n"
         f"Question: {question}\n"
         f"Options: {', '.join(f'{i}. {o}' for i, o in enumerate(options))}\n"
         f"Correct: Option {correct_index} — {options[correct_index]}\n"
         f"Student chose: Option {selected_index} — {options[selected_index]}\n\n"
         "In 1-2 sentences explain why the correct answer is right."
     )
-    response = client.messages.create(
-        model=HAIKU,
-        max_tokens=128,
-        system="You are a concise coding tutor. Explain MCQ answers kindly in 1-2 sentences.",
-        messages=[{"role": "user", "content": user_msg}],
-    )
-    return response.content[0].text.strip()
+    return _gemini_text(prompt, max_tokens=128)
 
 
 def chat_about_playcard(
@@ -313,17 +317,25 @@ def chat_about_playcard(
     user_message: str,
     history: list[dict] | None = None,
 ) -> str:
-    """Answer a student's question about a specific playcard concept."""
+    """Answer a student's question about a playcard using Gemini multi-turn."""
     if history is None:
         history = []
 
     system = PLAYCARD_SYSTEM + f"\n\n## Card: {playcard_title}\n\n{playcard_content}"
-    messages = [*history, {"role": "user", "content": user_message}]
 
-    response = client.messages.create(
-        model=HAIKU,
-        max_tokens=512,
-        system=system,
-        messages=messages,
+    # Build Gemini content list from history (user/assistant → user/model)
+    contents: list[gtypes.Content] = []
+    for msg in history:
+        role = "user" if msg["role"] == "user" else "model"
+        contents.append(gtypes.Content(role=role, parts=[gtypes.Part(text=msg["content"])]))
+    contents.append(gtypes.Content(role="user", parts=[gtypes.Part(text=user_message)]))
+
+    response = gemini.models.generate_content(
+        model=GEMINI_FLASH,
+        contents=contents,
+        config=gtypes.GenerateContentConfig(
+            system_instruction=system,
+            max_output_tokens=512,
+        ),
     )
-    return response.content[0].text.strip()
+    return response.text.strip()
