@@ -39,7 +39,7 @@ export default function ProblemsPage() {
   }
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-slate-900 text-slate-100">
       {/* Nav */}
       <nav className="border-b border-gray-800 px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-6">

@@ -2,12 +2,16 @@
 @plugin "@tailwindcss/typography";
 
 :root {
-  --background: #0F172A;   /* Deep Navy — slate-900 */
-  --foreground: #F1F5F9;   /* Off-White — slate-100 */
-  --accent: #06B6D4;        /* Electric Cyan — cyan-500 */
+  --background: #FDFCF8;   /* Warm off-white */
+  --foreground: #27272A;   /* Primary text — zinc-800 */
+  --foreground-secondary: #52525B; /* Secondary text — zinc-600 */
+  --foreground-muted: #A1A1AA; /* Muted text — zinc-400 */
+  --link: #0284C7;         /* Interactive text — sky-600 */
+  --accent: #06B6D4;       /* Accent (buttons/highlights) */
   --font-mono: var(--font-mono);
 }
 
+html,
 body {
   background: var(--background);
   color: var(--foreground);
@@ -39,9 +43,9 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #1E3A4A;
+  background: #D4D4D8;
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #06B6D4;
+  background: #0284C7;
 }

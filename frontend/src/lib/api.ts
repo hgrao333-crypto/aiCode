@@ -47,7 +47,7 @@ export async function login(email: string, password: string) {
 }
 
 export async function getMe() {
-  return request<{ id: number; email: string }>("/api/auth/me");
+  return request<{ id: number; email: string; is_admin: boolean }>("/api/auth/me");
 }
 
 // Problems
