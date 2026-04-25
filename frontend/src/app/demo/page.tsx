@@ -126,8 +126,7 @@ export default function DemoPage() {
     <div className="min-h-screen text-zinc-800">
       <nav className="border-b border-zinc-200 bg-white/80 backdrop-blur-sm sticky top-0 z-10 px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-6">
-          <Link href="/topics" className="text-zinc-800 font-bold text-lg">Logos</Link>
-          <Link href="/topics" className="text-zinc-600 text-sm hover:text-zinc-800 transition-colors">Curriculum</Link>
+          <Link href="/demo" className="text-zinc-800 font-bold text-lg">Logos</Link>
           <Link href="/demo" className="text-emerald-600 text-sm font-medium">Demo Course</Link>
         </div>
         <div className="flex items-center gap-4 text-sm">

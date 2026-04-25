@@ -1,13 +1,14 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
-import { getTopic, getUserStats, TopicDetail, UserStats } from "@/lib/api";
+import ReactMarkdown from "react-markdown";
+import { getTopic, getUserStats, tutorChat, TopicDetail, UserStats, getTutorProgress, saveTutorProgress, completeSubtopic, completeFinal } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 
 // ─── Tab types ─────────────────────────────────────────────────────────────────
 
-type Tab = "challenge" | "videos" | "problems";
+type Tab = "challenge" | "tutor" | "videos";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CHALLENGE: Knapsack interactive puzzle
@@ -386,21 +387,910 @@ function ChallengeTab({ slug }: { slug: string }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// TUTOR: Socratic AI tutor — 5 subtopics + assessment
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Assessment question types ────────────────────────────────────────────────
+type MCQQuestion  = { type: "mcq";   q: string; options: string[]; correct: number; explanation: string };
+type DebugQuestion = { type: "debug"; q: string; code: string; explanation: string };
+type TraceQuestion = { type: "trace"; q: string; hint: string; answer: string; explanation: string };
+type AssessQ = MCQQuestion | DebugQuestion | TraceQuestion;
+type Blank = { label: string; answer: string };
+type CodingProblem = { title: string; description: string; code: string; blanks: Blank[]; hint: string };
+
+interface SubtopicCfg {
+  stage: number; title: string; icon: string;
+  concepts: string[]; opener: string; assessment: AssessQ[];
+}
+
+const SUBTOPICS: SubtopicCfg[] = [
+  {
+    stage: 1, title: "The Thief's Choice", icon: "🎒",
+    concepts: ["Problem framing", "Why greedy fails", "2ⁿ decision tree"],
+    opener: "Let's start with the problem. Items A(3kg,$5), B(2kg,$3), C(2kg,$3), capacity 4kg. Easy approach: take the best value-per-kg first. Greedy takes A (ratio 1.67), leaving 1kg — neither B nor C fits. Result: $5. Can you find a better selection?",
+    assessment: [
+      {
+        type: "mcq",
+        q: "Items A(3kg,$5), B(2kg,$3), C(2kg,$3), capacity 4kg. Greedy picks A → $5. Why did greedy fail here?",
+        options: [
+          "Greedy didn't sort by weight",
+          "Taking A used 3kg, leaving no room for B+C which together give $6",
+          "Greedy is correct — $5 is optimal",
+          "Greedy should pick by value alone, not ratio",
+        ],
+        correct: 1,
+        explanation: "B+C = 4kg, $6 beats greedy's $5. Greedy locked in a 'good' item that crowded out a better combination. One choice changes what's possible later — that's why greedy fails.",
+      },
+      {
+        type: "debug",
+        q: "This greedy function returns wrong results. What's the bug?",
+        code: `def greedy_knapsack(items, capacity):
+    # items = [(weight, value), ...]
+    items.sort(key=lambda x: x[1] / x[0])   # sort by value/weight ratio
+    total, remaining = 0, capacity
+    for w, v in items:
+        if w <= remaining:
+            total += v
+            remaining -= w
+    return total`,
+        explanation: "The sort is ascending — it picks items with the LOWEST value/weight ratio first! Fix: add `reverse=True` to the sort call. Always double-check sort direction when greedy involves ratios.",
+      },
+    ],
+  },
+  {
+    stage: 2, title: "Overlapping Subproblems", icon: "🔁",
+    concepts: ["Recursive structure", "Repeated sub-problems", "Memoization"],
+    opener: "Greedy fails, so try brute force: check every take-or-skip combination. But in the recursion tree, sub-problems repeat — knapsack(items 1-2, capacity 3kg) might appear on dozens of branches. What's the simplest fix for recomputed answers?",
+    assessment: [
+      {
+        type: "mcq",
+        q: "What is the time complexity of knapsack with memoization (top-down DP)?",
+        options: [
+          "O(2ⁿ) — same as brute force",
+          "O(n × W) — each unique (i, w) pair solved exactly once",
+          "O(n²) — nested loops",
+          "O(n log W) — binary search on capacity",
+        ],
+        correct: 1,
+        explanation: "There are exactly n×W unique (item index, remaining capacity) pairs. Memoization ensures each is computed once and cached. Both time and space become O(n×W) — dramatically better than O(2ⁿ).",
+      },
+      {
+        type: "trace",
+        q: "Memoized knapsack: items = [(2kg,$3), (3kg,$4)], capacity = 5. What is memo[(2, 5)]?",
+        hint: "2 items, capacity 5. Can both fit? 2+3=5 ≤ 5. Total value = $3+$4 = ?",
+        answer: "7",
+        explanation: "Both items fit: 2+3=5kg, value $3+$4=$7. memo[(2,5)] = 7. The sub-problem 'best value using first 2 items at capacity 5' is solved once and stored.",
+      },
+    ],
+  },
+  {
+    stage: 3, title: "Building the Table", icon: "📊",
+    concepts: ["Bottom-up DP", "2D table dp[i][w]", "Recurrence: skip vs take"],
+    opener: "Memoization works top-down. Now go bottom-up: build a table dp[i][w] = best value using first i items at capacity w. Start with the base case — the whole first row dp[0][w] = ? (no items, any capacity.)",
+    assessment: [
+      {
+        type: "mcq",
+        q: "In dp[i][w] = max(dp[i-1][w], dp[i-1][w−wᵢ]+vᵢ), what does dp[i-1][w−wᵢ] represent?",
+        options: [
+          "Best value using all items at capacity w",
+          "Best value using first (i-1) items with capacity (w-wᵢ) — after making room for item i",
+          "The value of item i",
+          "The weight remaining after taking item i",
+        ],
+        correct: 1,
+        explanation: "If you take item i (weight wᵢ), you use wᵢ capacity. The best you can do with the remaining (w-wᵢ) capacity using items before i is dp[i-1][w-wᵢ]. Add vᵢ and compare with skipping.",
+      },
+      {
+        type: "debug",
+        q: "This 2D DP gives values that are too high. What's wrong?",
+        code: `dp = [[0]*(W+1) for _ in range(n+1)]
+for i in range(1, n+1):
+    wi, vi = items[i-1]
+    for w in range(W+1):
+        dp[i][w] = dp[i-1][w]           # skip
+        if wi <= w:
+            dp[i][w] = max(dp[i][w],
+                dp[i][w-wi] + vi)        # ← look here`,
+        explanation: "`dp[i][w-wi]` should be `dp[i-1][w-wi]`. Using the current row i means you can pick item i multiple times in one pass — that's unbounded knapsack. Always look back to row i-1 when 'taking' an item in 0/1 knapsack.",
+      },
+    ],
+  },
+  {
+    stage: 4, title: "One Row is Enough", icon: "➡️",
+    concepts: ["1D DP array", "Right-to-left iteration", "O(W) space"],
+    opener: "Our 2D table uses O(n×W) space — but dp[i][w] only reads row i-1. Can we compress to a single 1D array dp[w] updated in place? What breaks if you update left-to-right?",
+    assessment: [
+      {
+        type: "mcq",
+        q: "In 1D DP, why iterate w from W down to wᵢ (right-to-left)?",
+        options: [
+          "It's faster on modern CPUs due to cache locality",
+          "Left-to-right updates dp[w-wᵢ] first — item i could be counted twice in one pass",
+          "Going left-to-right would skip some capacities",
+          "Both directions are equivalent for 0/1 knapsack",
+        ],
+        correct: 1,
+        explanation: "Left-to-right: when computing dp[w], dp[w-wᵢ] was already updated this iteration → item i gets added again (unbounded behavior). Right-to-left ensures dp[w-wᵢ] still holds the 'before this item' value.",
+      },
+      {
+        type: "trace",
+        q: "1D DP: single item (2kg,$3), W=4. Starting from dp=[0,0,0,0,0], after processing this item right-to-left, what is dp[4]?",
+        hint: "Iterate w=4,3,2. At w=4: dp[4]=max(dp[4], dp[4-2]+3)=max(0, dp[2]+3). dp[2] hasn't been updated yet → dp[2]=0.",
+        answer: "3",
+        explanation: "Right-to-left: w=4→max(0,dp[2]+3)=3, w=3→max(0,dp[1]+3)=3, w=2→max(0,dp[0]+3)=3. Each capacity gets the item at most once. dp[4]=3 (one copy of the item).",
+      },
+    ],
+  },
+  {
+    stage: 5, title: "Variations", icon: "🔀",
+    concepts: ["Subset Sum mapping", "Unbounded Knapsack", "Pattern recognition"],
+    opener: "You know 0/1 Knapsack cold. New problem: given integers [3,1,5,9,12], can any subset sum to exactly 14? Before writing code — does this feel structurally similar to anything you've seen?",
+    assessment: [
+      {
+        type: "mcq",
+        q: "Subset Sum mapped to knapsack: weight=value=num, capacity=target. What does dp[n][target]=target mean?",
+        options: [
+          "We found exactly 'target' items in the array",
+          "A subset exists that sums to target (since value=weight, total_value=total_weight=target)",
+          "The array length equals target",
+          "The greedy approach would work here",
+        ],
+        correct: 1,
+        explanation: "Since value=weight=num, dp[n][target]=target means we packed exactly 'target' units of value into 'target' capacity — the selected numbers sum to target. dp[n][target] < target means no valid subset.",
+      },
+      {
+        type: "debug",
+        q: "This is meant to be unbounded knapsack (each item usable unlimited times). It's accidentally doing 0/1 knapsack. Fix it:",
+        code: `dp = [0] * (W+1)
+for wi, vi in items:
+    for w in range(W, wi-1, -1):   # right-to-left
+        dp[w] = max(dp[w], dp[w-wi] + vi)
+return dp[W]`,
+        explanation: "Change the loop to left-to-right: `range(wi, W+1)`. Left-to-right means dp[w-wi] was already updated this iteration → the same item can be added multiple times. Right-to-left = 0/1 (one copy). Left-to-right = unbounded. One direction change, completely different problem.",
+      },
+    ],
+  },
+];
+
+// ── Per-subtopic easy coding exercises ───────────────────────────────────────
+
+const CODING_PROBLEMS: CodingProblem[] = [
+  {
+    title: "Brute Force Recursion",
+    description: "Complete the recursive knapsack. When you take item i, the remaining capacity shrinks by its weight. Return the better of skip vs take.",
+    code: `def knapsack(items, capacity, i=0):
+    if i == len(items) or capacity == 0:
+        return 0
+    w, v = items[i]
+    skip = knapsack(items, capacity, i + 1)
+    if w > capacity:
+        return skip
+    take = v + knapsack(items, [1], i + 1)
+    return [2]`,
+    blanks: [
+      { label: "Capacity left after taking item i (weight w)", answer: "capacity - w" },
+      { label: "Return the better choice between skip and take", answer: "max(skip, take)" },
+    ],
+    hint: "Taking item i costs w capacity. The recursive call for 'take' must reflect that reduced capacity. The function should return whichever path gives more total value.",
+  },
+  {
+    title: "Add Memoization",
+    description: "The brute force recomputes identical sub-problems. Add a cache dict. The key must uniquely identify a sub-problem — what two values define it?",
+    code: `memo = {}
+def knapsack(items, capacity, i=0):
+    if i == len(items) or capacity == 0:
+        return 0
+    key = [1]
+    if key in memo:
+        return memo[key]
+    w, v = items[i]
+    skip = knapsack(items, capacity, i + 1)
+    take = (v + knapsack(items, capacity - w, i + 1)) if w <= capacity else 0
+    memo[key] = max(skip, take)
+    return memo[key]`,
+    blanks: [
+      { label: "Cache key that uniquely identifies this sub-problem (item index, remaining capacity)", answer: "(i, capacity)" },
+    ],
+    hint: "A sub-problem is fully defined by two numbers: which item we're deciding on now, and how much capacity remains.",
+  },
+  {
+    title: "Fill the 2D Recurrence",
+    description: "Bottom-up DP: dp[i][w] = best value using first i items at capacity w. Fill the 'take item i' branch of the recurrence.",
+    code: `def knapsack(items, W):
+    n = len(items)
+    dp = [[0] * (W + 1) for _ in range(n + 1)]
+    for i in range(1, n + 1):
+        w, v = items[i - 1]
+        for cap in range(W + 1):
+            dp[i][cap] = dp[i-1][cap]      # skip
+            if w <= cap:
+                dp[i][cap] = max(dp[i][cap],
+                    [1] + v)               # take item i
+    return dp[n][W]`,
+    blanks: [
+      { label: "Best value using first i-1 items, capacity after making room for item i", answer: "dp[i-1][cap-w]" },
+    ],
+    hint: "Taking item i uses w capacity. What's the best we could do with (cap-w) capacity, using only the items before i (row i-1)?",
+  },
+  {
+    title: "1D DP — Right to Left",
+    description: "Compress the 2D table to one array. Fill the iteration start and the dp lookup for the 'take' case.",
+    code: `def knapsack(items, W):
+    dp = [0] * (W + 1)
+    for w, v in items:
+        for cap in range([1], w - 1, -1):  # right-to-left
+            dp[cap] = max(dp[cap], [2] + v)
+    return dp[W]`,
+    blanks: [
+      { label: "Start of the right-to-left range (largest capacity first)", answer: "W" },
+      { label: "dp lookup for taking the item (capacity before this item was added)", answer: "dp[cap-w]" },
+    ],
+    hint: "range(start, stop, step=-1) goes from start down to stop+1. Start at max capacity W. Taking the item means looking back at dp[cap-w] — the value before this item occupied w space.",
+  },
+  {
+    title: "Subset Sum via DP",
+    description: "Can [3,1,5,9,12] be split into two equal subsets? Use a boolean DP: dp[cap] = True if some subset sums to cap.",
+    code: `def can_partition(nums):
+    total = sum(nums)
+    if total % 2 != 0:
+        return False
+    target = total // 2
+    dp = [False] * (target + 1)
+    dp[0] = [1]                          # empty subset always sums to 0
+    for n in nums:
+        for cap in range(target, n - 1, -1):
+            dp[cap] = dp[cap] or [2]
+    return dp[target]`,
+    blanks: [
+      { label: "Initial value for dp[0] — can we reach sum 0?", answer: "True" },
+      { label: "Transition: can we reach cap by including this number?", answer: "dp[cap-n]" },
+    ],
+    hint: "dp[0]=True because an empty subset sums to 0. Transition: we can reach 'cap' if we could previously reach 'cap-n' (and now add n to that subset).",
+  },
+];
+
+const FINAL_PROBLEM: CodingProblem = {
+  title: "Knapsack with Item Tracking",
+  description: "Hard: find the maximum value AND recover the list of items chosen. Fill the forward DP recurrence, then complete the backtracking pass.",
+  code: `def knapsack_with_items(items, W):
+    # items = [(weight, value), ...]
+    n = len(items)
+    dp = [[0] * (W + 1) for _ in range(n + 1)]
+
+    for i in range(1, n + 1):
+        wi, vi = items[i - 1]
+        for cap in range(W + 1):
+            dp[i][cap] = dp[i-1][cap]
+            if wi <= cap:
+                dp[i][cap] = max(dp[i][cap],
+                    [1] + vi)    # take item i
+
+    chosen, cap = [], W
+    for i in range(n, 0, -1):
+        if dp[i][cap] != [2]:    # item i was taken
+            chosen.append(items[i-1])
+            cap -= [3]           # reduce remaining capacity
+    return dp[n][W], chosen`,
+  blanks: [
+    { label: "Recurrence: best value using first i-1 items with capacity after taking item i", answer: "dp[i-1][cap-wi]" },
+    { label: "Backtrack check: value at this capacity WITHOUT item i (if unchanged, item was skipped)", answer: "dp[i-1][cap]" },
+    { label: "Reduce remaining capacity after confirming item i was taken (item i has weight wi)", answer: "wi" },
+  ],
+  hint: "Backtracking: if dp[i][cap] == dp[i-1][cap], the value didn't change → item i was skipped. If it changed, item i was taken — append it and subtract its weight from cap.",
+};
+
+// ── Visual aid per subtopic ───────────────────────────────────────────────────
+
+function SubtopicVisual({ stage }: { stage: number }) {
+  if (stage === 1) return (
+    <div className="p-4 rounded-xl bg-white border border-zinc-200 shadow-sm space-y-3">
+      <div className="text-xs font-bold text-zinc-500 uppercase tracking-wide">Decision Tree</div>
+      <div className="text-xs space-y-1.5 font-mono">
+        <div className="text-zinc-500">For each item i:</div>
+        <div className="pl-3 space-y-1">
+          <div><span className="text-sky-600 font-bold">SKIP</span> → solve(rest, same capacity)</div>
+          <div><span className="text-emerald-600 font-bold">TAKE</span> → solve(rest, W−wᵢ) + vᵢ</div>
+        </div>
+        <div className="pt-1.5 text-zinc-500">n items → <span className="text-red-600 font-bold">2ⁿ leaves</span></div>
+      </div>
+      <div className="grid grid-cols-3 gap-2 text-xs text-center">
+        {[["n=3","8"],["n=15","32,768"],["n=30","1B+"]].map(([n,c])=>(
+          <div key={n} className="p-2 rounded-lg bg-zinc-50 border border-zinc-200">
+            <div className="font-mono font-bold text-zinc-700">{n}</div>
+            <div className="text-red-500 font-semibold text-[11px]">{c}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+  if (stage === 2) return (
+    <div className="p-4 rounded-xl bg-white border border-zinc-200 shadow-sm space-y-3">
+      <div className="text-xs font-bold text-zinc-500 uppercase tracking-wide">Memoization</div>
+      <div className="p-2.5 rounded-lg bg-zinc-50 border border-zinc-200 font-mono text-xs text-zinc-700">
+        memo[(i, w)] = best value<br/>using first i items, capacity w
+      </div>
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        <div className="p-2 rounded-lg bg-red-50 border border-red-200">
+          <div className="font-bold text-red-700 mb-0.5">Without cache</div>
+          <div className="text-red-600 leading-snug">Same (i,w) solved O(2ⁿ) times</div>
+        </div>
+        <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-200">
+          <div className="font-bold text-emerald-700 mb-0.5">With cache</div>
+          <div className="text-emerald-600 leading-snug">Each (i,w) solved once → O(n×W)</div>
+        </div>
+      </div>
+    </div>
+  );
+  if (stage === 3) return (
+    <div className="p-4 rounded-xl bg-white border border-zinc-200 shadow-sm space-y-2">
+      <div className="text-xs font-bold text-zinc-500 uppercase tracking-wide">DP Table (cap=8)</div>
+      <div className="overflow-x-auto">
+        <table className="text-xs font-mono border-collapse w-full">
+          <thead><tr>
+            <th className="text-zinc-400 text-left pb-1 pr-2">i\w</th>
+            {[0,1,2,3,4,5,6,7,8].map(w=><th key={w} className="text-zinc-400 pb-1 px-1 text-center">{w}</th>)}
+          </tr></thead>
+          <tbody>
+            {[{l:"0",r:[0,0,0,0,0,0,0,0,0]},{l:"1💎",r:[0,0,0,0,0,0,0,10,10]},{l:"2🥇",r:[0,0,0,0,0,8,8,10,10]},{l:"3🔋",r:[0,0,0,5,5,8,8,10,13]}].map(({l,r},ri)=>(
+              <tr key={ri}>
+                <td className="text-zinc-500 pr-2 py-0.5">{l}</td>
+                {r.map((v,wi)=><td key={wi} className={`text-center px-1 py-0.5 rounded ${ri===3&&wi===8?"bg-emerald-100 text-emerald-700 font-bold":v>0?"text-zinc-700":"text-zinc-300"}`}>{v}</td>)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="text-xs text-zinc-500">dp[3][8]=<span className="text-emerald-600 font-bold">13</span> → Gold+Battery</div>
+    </div>
+  );
+  if (stage === 4) return (
+    <div className="p-4 rounded-xl bg-white border border-zinc-200 shadow-sm space-y-3">
+      <div className="text-xs font-bold text-zinc-500 uppercase tracking-wide">1D DP: item (2kg,$3), W=5</div>
+      <div className="text-xs font-mono space-y-2">
+        <div>
+          <div className="text-red-600 font-bold mb-0.5">Left→Right (wrong):</div>
+          <div className="text-zinc-600 pl-2 space-y-0.5">
+            <div>w=2: dp[2]=max(0,dp[0]+3)=<span className="font-bold">3</span></div>
+            <div>w=4: dp[4]=max(0,<span className="text-red-500">dp[2]</span>+3)=<span className="text-red-600 font-bold">6</span> ← item used twice!</div>
+          </div>
+        </div>
+        <div>
+          <div className="text-emerald-600 font-bold mb-0.5">Right→Left (correct):</div>
+          <div className="text-zinc-600 pl-2 space-y-0.5">
+            <div>w=4: dp[4]=max(0,<span className="text-emerald-500">dp[2]</span>+3)=<span className="text-emerald-700 font-bold">3</span> ✓</div>
+            <div>w=2: dp[2]=max(0,dp[0]+3)=<span className="text-emerald-700 font-bold">3</span> ✓</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+  if (stage === 5) return (
+    <div className="p-4 rounded-xl bg-white border border-zinc-200 shadow-sm space-y-3">
+      <div className="text-xs font-bold text-zinc-500 uppercase tracking-wide">Pattern Map</div>
+      <table className="w-full text-xs">
+        <thead><tr>
+          <th className="text-left text-zinc-500 font-medium pb-1.5">Problem</th>
+          <th className="text-left text-zinc-500 font-medium pb-1.5">Loop</th>
+        </tr></thead>
+        <tbody>
+          {[["0/1 Knapsack","R→L"],["Subset Sum","R→L"],["Unbounded Knapsack","L→R"],["Coin Change (min)","L→R"]].map(([p,d])=>(
+            <tr key={p}>
+              <td className="text-zinc-700 py-1 pr-2 text-[11px]">{p}</td>
+              <td className={`py-1 font-mono font-bold text-[11px] ${d==="R→L"?"text-sky-600":"text-emerald-600"}`}>{d}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+  return null;
+}
+
+// ── Assessment question cards ─────────────────────────────────────────────────
+
+function MCQCard({ q, onDone }: { q: MCQQuestion; onDone: (correct: boolean) => void }) {
+  const [selected, setSelected] = useState<number | null>(null);
+  const answered = selected !== null;
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-zinc-800 leading-relaxed">{q.q}</p>
+      <div className="space-y-2">
+        {q.options.map((opt, i) => (
+          <button key={i} disabled={answered}
+            onClick={() => { setSelected(i); onDone(i === q.correct); }}
+            className={`w-full text-left px-4 py-2.5 rounded-xl border text-sm transition-colors ${
+              !answered ? "border-zinc-200 bg-white hover:border-sky-300 hover:bg-sky-50 text-zinc-700"
+              : i === q.correct ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+              : i === selected ? "border-red-300 bg-red-50 text-red-700"
+              : "border-zinc-100 bg-zinc-50 text-zinc-400"
+            }`}>
+            <span className="font-mono text-xs mr-2 text-zinc-400">{String.fromCharCode(65+i)}.</span>{opt}
+          </button>
+        ))}
+      </div>
+      {answered && (
+        <div className={`p-3 rounded-xl text-sm border ${selected===q.correct?"bg-emerald-50 border-emerald-200 text-emerald-800":"bg-amber-50 border-amber-200 text-amber-800"}`}>
+          <span className="font-semibold">{selected===q.correct?"✓ Correct! ":"Not quite — "}</span>{q.explanation}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DebugCard({ q, onDone }: { q: DebugQuestion; onDone: () => void }) {
+  const [input, setInput] = useState("");
+  const [revealed, setRevealed] = useState(false);
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-zinc-800">{q.q}</p>
+      <pre className="text-[11px] font-mono bg-zinc-50 border border-zinc-200 rounded-xl p-4 overflow-x-auto text-zinc-700 leading-relaxed whitespace-pre">{q.code}</pre>
+      {!revealed ? (
+        <div className="space-y-2">
+          <textarea value={input} onChange={e=>setInput(e.target.value)} rows={2}
+            placeholder="Describe the bug in your own words..."
+            className="w-full text-sm bg-white border border-zinc-200 rounded-xl px-3 py-2 focus:outline-none focus:border-sky-400 resize-none text-zinc-800 placeholder:text-zinc-400" />
+          <button onClick={() => { setRevealed(true); onDone(); }}
+            className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white text-sm font-medium transition-colors">
+            Reveal Answer
+          </button>
+        </div>
+      ) : (
+        <div className="p-3 rounded-xl bg-sky-50 border border-sky-200 text-sm text-sky-900">
+          <span className="font-semibold">The bug: </span>{q.explanation}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TraceCard({ q, onDone }: { q: TraceQuestion; onDone: (correct: boolean) => void }) {
+  const [input, setInput] = useState("");
+  const [checked, setChecked] = useState(false);
+  const isCorrect = input.trim() === q.answer.trim();
+  function check() { if (input.trim()) { setChecked(true); onDone(isCorrect); } }
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-zinc-800">{q.q}</p>
+      <p className="text-xs text-zinc-500 italic">{q.hint}</p>
+      <div className="flex gap-2">
+        <input type="text" value={input} onChange={e=>setInput(e.target.value)}
+          onKeyDown={e=>{ if(e.key==="Enter"&&!checked) check(); }}
+          disabled={checked} placeholder="Your answer..."
+          className="flex-1 text-sm bg-white border border-zinc-200 rounded-xl px-3 py-2 focus:outline-none focus:border-sky-400 disabled:opacity-60 text-zinc-800" />
+        {!checked && (
+          <button onClick={check} disabled={!input.trim()}
+            className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 disabled:opacity-40 text-white text-sm font-medium">
+            Check
+          </button>
+        )}
+      </div>
+      {checked && (
+        <div className={`p-3 rounded-xl text-sm border ${isCorrect?"bg-emerald-50 border-emerald-200 text-emerald-800":"bg-amber-50 border-amber-200 text-amber-800"}`}>
+          {!isCorrect && <div className="font-semibold mb-1">Answer: {q.answer}</div>}
+          {isCorrect && <div className="font-semibold mb-1">✓ Correct!</div>}
+          {q.explanation}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AssessmentPhase({ cfg, onComplete }: { cfg: SubtopicCfg; onComplete: () => void }) {
+  const [qIdx, setQIdx] = useState(0);
+  const [answered, setAnswered] = useState(false);
+
+  const q = cfg.assessment[qIdx];
+  const isLast = qIdx === cfg.assessment.length - 1;
+
+  function handleDone(correct?: boolean) { void correct; setAnswered(true); }
+  function next() { if (isLast) onComplete(); else { setQIdx(i=>i+1); setAnswered(false); } }
+
+  return (
+    <div className="max-w-2xl mx-auto space-y-5">
+      <div className="flex items-center gap-3">
+        <span className="text-2xl">{cfg.icon}</span>
+        <div>
+          <div className="text-xs font-bold text-zinc-500 uppercase tracking-wide">Check Your Understanding</div>
+          <div className="font-semibold text-zinc-800 text-sm">{cfg.title}</div>
+        </div>
+        <span className="ml-auto text-xs text-zinc-400">Q{qIdx+1} of {cfg.assessment.length}</span>
+      </div>
+      <div className="flex gap-1.5">
+        {cfg.assessment.map((_,i)=>(
+          <div key={i} className={`flex-1 h-1.5 rounded-full ${i<qIdx?"bg-emerald-400":i===qIdx?"bg-sky-400":"bg-zinc-200"}`} />
+        ))}
+      </div>
+      <div className="p-5 rounded-2xl border border-zinc-200 bg-white shadow-sm">
+        <div className="mb-4">
+          <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
+            q.type==="mcq"?"bg-sky-100 text-sky-700":q.type==="debug"?"bg-red-100 text-red-700":"bg-amber-100 text-amber-700"
+          }`}>
+            {q.type==="mcq"?"Multiple Choice":q.type==="debug"?"Find the Bug":"Trace the Code"}
+          </span>
+        </div>
+        {q.type==="mcq"  && <MCQCard  q={q} onDone={(c)=>handleDone(c)} />}
+        {q.type==="debug" && <DebugCard q={q} onDone={()=>handleDone()} />}
+        {q.type==="trace" && <TraceCard q={q} onDone={(c)=>handleDone(c)} />}
+      </div>
+      {answered && (
+        <div className="flex justify-end">
+          <button onClick={next}
+            className="px-5 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white font-semibold text-sm transition-colors">
+            {isLast?"Continue →":"Next Question →"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Coding playground ────────────────────────────────────────────────────────
+
+function renderCodeWithBlanks(code: string) {
+  return code.split(/(\[\d+\])/).map((part, i) =>
+    /^\[\d+\]$/.test(part)
+      ? <span key={i} className="bg-sky-100 text-sky-700 font-bold rounded px-1 mx-0.5 text-[11px] border border-sky-200">{part}</span>
+      : <span key={i}>{part}</span>
+  );
+}
+
+function SubtopicNav({ subtopicIdx, completedSubtopics, phase, onJump, onFinal }: {
+  subtopicIdx: number; completedSubtopics: number[]; phase: string;
+  onJump: (i: number) => void; onFinal: () => void;
+}) {
+  return (
+    <div className="flex gap-1.5 flex-wrap">
+      {SUBTOPICS.map((s, i) => {
+        const isDone = completedSubtopics.includes(i);
+        const isCurrent = i === subtopicIdx && phase !== "final";
+        return (
+          <button key={i}
+            onClick={() => onJump(i)}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors border ${
+              isCurrent ? "bg-sky-100 text-sky-700 border-sky-300"
+              : isDone ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+              : "bg-zinc-50 text-zinc-500 border-zinc-200 hover:bg-zinc-100"
+            }`}
+          >
+            <span>{isDone ? "✓" : s.icon}</span>
+            <span className="hidden sm:inline">{s.title}</span>
+          </button>
+        );
+      })}
+      {completedSubtopics.length === SUBTOPICS.length && phase !== "final" && phase !== "done" && (
+        <button onClick={onFinal}
+          className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors border bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100">
+          🏆 <span className="hidden sm:inline ml-1">Final Challenge</span>
+        </button>
+      )}
+    </div>
+  );
+}
+
+function CodingPlayground({ problem, isHard, onComplete }: {
+  problem: CodingProblem; isHard: boolean; onComplete: () => void;
+}) {
+  const [values, setValues] = useState<string[]>(Array(problem.blanks.length).fill(""));
+  const [results, setResults] = useState<boolean[] | null>(null);
+  const [showHint, setShowHint] = useState(false);
+  const allCorrect = results?.every(Boolean) ?? false;
+
+  function check() {
+    setResults(values.map((v, i) =>
+      v.replace(/\s/g, "") === problem.blanks[i].answer.replace(/\s/g, "")
+    ));
+  }
+
+  return (
+    <div className="max-w-2xl mx-auto space-y-5">
+      <div className="flex items-center gap-3 flex-wrap">
+        <span className={`text-xs px-2.5 py-0.5 rounded-full font-bold ${isHard ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}`}>
+          {isHard ? "Hard Challenge" : "Coding Exercise"}
+        </span>
+        <span className="font-semibold text-zinc-800">{problem.title}</span>
+      </div>
+      <p className="text-sm text-zinc-600 leading-relaxed">{problem.description}</p>
+      <div className="rounded-xl border border-zinc-200 overflow-hidden shadow-sm">
+        <div className="px-4 py-2.5 border-b border-zinc-200 bg-white flex items-center justify-between">
+          <span className="text-xs text-zinc-400 font-mono">Python — fill in the [N] blanks below</span>
+          <button onClick={() => setShowHint(h => !h)}
+            className="text-xs text-sky-600 hover:text-sky-500 transition-colors font-medium">
+            {showHint ? "Hide hint" : "Show hint"}
+          </button>
+        </div>
+        <pre className="p-4 text-[12px] font-mono leading-relaxed overflow-x-auto bg-zinc-50 text-zinc-700 whitespace-pre">
+          {renderCodeWithBlanks(problem.code)}
+        </pre>
+      </div>
+      {showHint && (
+        <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-sm text-amber-800 leading-relaxed">
+          💡 {problem.hint}
+        </div>
+      )}
+      <div className="space-y-3">
+        {problem.blanks.map((blank, i) => (
+          <div key={i} className="flex items-start gap-3">
+            <span className="mt-2 w-7 h-7 flex items-center justify-center rounded-full bg-sky-100 text-sky-700 text-xs font-bold flex-shrink-0">
+              {i + 1}
+            </span>
+            <div className="flex-1 space-y-1">
+              <div className="text-xs text-zinc-500 leading-snug">{blank.label}</div>
+              <input type="text" value={values[i]}
+                onChange={e => {
+                  const next = [...values]; next[i] = e.target.value;
+                  setValues(next);
+                  if (results) setResults(null);
+                }}
+                disabled={allCorrect}
+                placeholder="Your answer..."
+                className={`w-full text-sm font-mono bg-white border rounded-lg px-3 py-2 focus:outline-none transition-colors ${
+                  results === null ? "border-zinc-200 focus:border-sky-400"
+                  : results[i] ? "border-emerald-400 bg-emerald-50 text-emerald-800"
+                  : "border-red-300 bg-red-50 text-red-700"
+                }`}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+      {results && !allCorrect && (
+        <p className="text-sm text-red-600">Some blanks are incorrect — red fields need fixing.</p>
+      )}
+      {!allCorrect ? (
+        <button onClick={check} disabled={values.some(v => !v.trim())}
+          className="w-full py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 text-white font-semibold text-sm transition-colors">
+          Check Answers
+        </button>
+      ) : (
+        <div className="space-y-3">
+          <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm text-center font-medium">
+            🎉 {isHard ? "All correct! Full knapsack with backtracking solved." : "All correct! Ready for the next subtopic."}
+          </div>
+          <button onClick={onComplete}
+            className={`w-full py-2.5 rounded-xl text-white font-semibold text-sm transition-colors ${isHard ? "bg-emerald-600 hover:bg-emerald-500" : "bg-sky-600 hover:bg-sky-500"}`}>
+            {isHard ? "Complete Course →" : "Continue →"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── TutorTab ──────────────────────────────────────────────────────────────────
+
+function TutorTab({ slug }: { slug: string }) {
+  const [subtopicIdx, setSubtopicIdx] = useState(0);
+  const [phase, setPhase] = useState<"learning" | "assessment" | "coding" | "final" | "done">("learning");
+  const [completedSubtopics, setCompletedSubtopics] = useState<number[]>([]);
+  const [messages, setMessages] = useState<Array<{ role: string; content: string }>>([
+    { role: "assistant", content: SUBTOPICS[0].opener },
+  ]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [advancing, setAdvancing] = useState(false);
+  const [progressLoaded, setProgressLoaded] = useState(false);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const current = SUBTOPICS[subtopicIdx];
+
+  // Load persisted progress on mount
+  useEffect(() => {
+    getTutorProgress(slug).then(p => {
+      const idx = Math.min(p.subtopic_idx, SUBTOPICS.length - 1);
+      setSubtopicIdx(idx);
+      setCompletedSubtopics(p.completed_subtopics || []);
+      const validPhase = ["learning","assessment","coding","final","done"].includes(p.phase)
+        ? p.phase as typeof phase : "learning";
+      setPhase(validPhase);
+      setMessages([{ role: "assistant", content: SUBTOPICS[idx].opener }]);
+    }).catch(() => {/* ignore — start fresh */}).finally(() => setProgressLoaded(true));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slug]);
+
+  // Auto-save whenever navigable state changes (skip initial render before load)
+  useEffect(() => {
+    if (!progressLoaded) return;
+    saveTutorProgress(slug, { subtopic_idx: subtopicIdx, phase, completed_subtopics: completedSubtopics }).catch(() => {});
+  }, [slug, subtopicIdx, phase, completedSubtopics, progressLoaded]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  useEffect(() => {
+    if (!loading && !advancing) inputRef.current?.focus();
+  }, [loading, advancing]);
+
+  function jumpToSubtopic(idx: number) {
+    if (idx === subtopicIdx && phase === "learning") return;
+    setSubtopicIdx(idx);
+    setPhase("learning");
+    setMessages([{ role: "assistant", content: SUBTOPICS[idx].opener }]);
+  }
+
+  function handleAssessmentComplete() {
+    setPhase("coding");
+  }
+
+  function handleCodingComplete() {
+    const newCompleted = completedSubtopics.includes(subtopicIdx)
+      ? completedSubtopics : [...completedSubtopics, subtopicIdx];
+    setCompletedSubtopics(newCompleted);
+    completeSubtopic(slug, `stage-${subtopicIdx + 1}`, subtopicIdx).catch(() => {});
+    const next = subtopicIdx + 1;
+    if (next < SUBTOPICS.length) {
+      setSubtopicIdx(next);
+      setPhase("learning");
+      setMessages([{ role: "assistant", content: SUBTOPICS[next].opener }]);
+    } else {
+      setPhase("final");
+    }
+  }
+
+  async function sendMessage() {
+    if (!input.trim() || loading || advancing) return;
+    const userMsg = input.trim();
+    setInput("");
+    inputRef.current?.focus();
+    const history = messages;
+    setMessages(prev => [...prev, { role: "user", content: userMsg }]);
+    setLoading(true);
+    try {
+      const { reply, advance } = await tutorChat(slug, current.stage, userMsg, history);
+      setMessages(prev => [...prev, { role: "assistant", content: reply }]);
+      if (advance) {
+        setAdvancing(true);
+        setTimeout(() => { setAdvancing(false); setPhase("assessment"); }, 1800);
+      }
+    } catch {
+      setMessages(prev => [...prev, { role: "assistant", content: "Something went wrong — please try again." }]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const navProps = { subtopicIdx, completedSubtopics, phase, onJump: jumpToSubtopic, onFinal: () => setPhase("final") };
+
+  if (phase === "done") {
+    return (
+      <div className="text-center py-12 space-y-6 max-w-xl mx-auto">
+        <div className="text-5xl">🏆</div>
+        <h2 className="text-xl font-bold text-zinc-800">You&apos;ve mastered the Knapsack Problem</h2>
+        <p className="text-zinc-600 text-sm leading-relaxed">
+          Five subtopics. Ten assessment questions. Five coding exercises. One final challenge.
+          From greedy failure to backtracking the items chosen — layered, permanent understanding.
+        </p>
+        <div className="grid grid-cols-5 gap-2 text-xs text-center">
+          {SUBTOPICS.map(s => (
+            <div key={s.stage} className="p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 leading-tight">
+              <div className="text-xl mb-1">{s.icon}</div>
+              {s.title}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (phase === "final") {
+    return (
+      <div className="space-y-5">
+        <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 flex items-center gap-3">
+          <span className="text-xl">🏆</span>
+          <div>
+            <div className="text-sm font-semibold text-amber-800">Final Challenge</div>
+            <div className="text-xs text-amber-700">All 5 subtopics complete. One hard problem to cement everything.</div>
+          </div>
+        </div>
+        <SubtopicNav {...navProps} />
+        <CodingPlayground problem={FINAL_PROBLEM} isHard={true} onComplete={() => { completeFinal().catch(() => {}); setPhase("done"); }} />
+      </div>
+    );
+  }
+
+  if (phase === "coding") {
+    return (
+      <div className="space-y-5">
+        <SubtopicNav {...navProps} />
+        <CodingPlayground problem={CODING_PROBLEMS[subtopicIdx]} isHard={false} onComplete={handleCodingComplete} />
+      </div>
+    );
+  }
+
+  if (phase === "assessment") {
+    return (
+      <div className="space-y-5">
+        <SubtopicNav {...navProps} />
+        <AssessmentPhase cfg={current} onComplete={handleAssessmentComplete} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      <SubtopicNav {...navProps} />
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
+        <div className="lg:col-span-2 space-y-4">
+          <div className="p-4 rounded-xl bg-white border border-zinc-200 shadow-sm">
+            <div className="text-xs font-bold text-zinc-500 uppercase tracking-wide mb-2">Key Concepts</div>
+            <div className="space-y-1.5">
+              {current.concepts.map((c, i) => (
+                <div key={i} className="flex items-center gap-2 text-xs text-zinc-600">
+                  <span className="w-1.5 h-1.5 rounded-full bg-sky-400 flex-shrink-0" />{c}
+                </div>
+              ))}
+            </div>
+          </div>
+          <SubtopicVisual stage={current.stage} />
+        </div>
+        <div className="lg:col-span-3 flex flex-col" style={{ height: 500 }}>
+          <div className="flex-1 overflow-y-auto space-y-3 p-4 rounded-t-xl border border-b-0 border-zinc-200 bg-zinc-50">
+            {messages.map((msg, i) => (
+              <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                <div className={`max-w-[88%] px-4 py-2.5 rounded-2xl text-sm ${
+                  msg.role === "user" ? "bg-sky-600 text-white" : "bg-white border border-zinc-200 shadow-sm text-zinc-800"
+                }`}>
+                  {msg.role === "assistant" ? (
+                    <div className="prose prose-sm max-w-none prose-pre:bg-zinc-50 prose-pre:border prose-pre:border-zinc-200 prose-code:text-sky-600 prose-p:my-1 prose-ul:my-1">
+                      <ReactMarkdown>{msg.content}</ReactMarkdown>
+                    </div>
+                  ) : msg.content}
+                </div>
+              </div>
+            ))}
+            {(loading || advancing) && (
+              <div className="flex justify-start">
+                <div className="bg-white border border-zinc-200 shadow-sm px-4 py-2.5 rounded-2xl text-sm text-zinc-400">
+                  {advancing ? "Check your understanding →" : "Thinking..."}
+                </div>
+              </div>
+            )}
+            <div ref={bottomRef} />
+          </div>
+          <div className="flex gap-2 p-3 border border-zinc-200 rounded-b-xl bg-white">
+            <input ref={inputRef} type="text" value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+              placeholder="Type your answer and press Enter..."
+              disabled={loading || advancing}
+              className="flex-1 text-sm bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 focus:outline-none focus:border-sky-400 transition-colors disabled:opacity-60 text-zinc-800 placeholder:text-zinc-400"
+            />
+            <button onClick={sendMessage} disabled={!input.trim() || loading || advancing}
+              className="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 disabled:opacity-40 text-white text-sm font-medium transition-colors">
+              Send
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // YouTube embed + Problems tab (unchanged logic, light theme)
 // ─────────────────────────────────────────────────────────────────────────────
 
+const VIDEO_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
 function YouTubeEmbed({ youtubeId, title }: { youtubeId: string; title: string }) {
+  const isLocal = youtubeId.startsWith("local:");
+  const localSrc = isLocal ? `${VIDEO_BASE}/static/videos/${encodeURIComponent(youtubeId.slice(6))}` : null;
   return (
     <div className="rounded-xl overflow-hidden border border-zinc-200 bg-zinc-50 shadow-sm">
-      <div className="aspect-video w-full">
-        <iframe
-          src={`https://www.youtube-nocookie.com/embed/${youtubeId}?rel=0&modestbranding=1`}
-          title={title}
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-          allowFullScreen
-          referrerPolicy="strict-origin-when-cross-origin"
-          className="w-full h-full"
-        />
+      <div className="aspect-video w-full bg-black">
+        {isLocal ? (
+          <video src={localSrc!} controls className="w-full h-full" />
+        ) : (
+          <iframe
+            src={`https://www.youtube-nocookie.com/embed/${youtubeId}?rel=0&modestbranding=1`}
+            title={title}
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            allowFullScreen
+            referrerPolicy="strict-origin-when-cross-origin"
+            className="w-full h-full"
+          />
+        )}
       </div>
       <div className="px-3 py-2 text-sm text-zinc-700">{title}</div>
     </div>
@@ -523,8 +1413,8 @@ export default function TopicPage() {
     <div className="min-h-screen text-zinc-800">
       <nav className="border-b border-zinc-200 bg-white/80 backdrop-blur-sm sticky top-0 z-10 px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-6">
-          <Link href="/topics" className="text-zinc-800 font-bold text-lg">Logos</Link>
-          <Link href="/topics" className="text-zinc-600 text-sm hover:text-zinc-800 transition-colors">← Curriculum</Link>
+          <Link href="/demo" className="text-zinc-800 font-bold text-lg">Logos</Link>
+          <Link href="/demo" className="text-zinc-600 text-sm hover:text-zinc-800 transition-colors">← Back</Link>
         </div>
         <div className="flex items-center gap-4 text-sm">
           <NavXP stats={userStats} />
@@ -565,50 +1455,39 @@ export default function TopicPage() {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 mb-6 border-b border-zinc-200">
-          {/* Challenge — first, default */}
+        <div className="flex gap-1 mb-6 border-b border-zinc-200 overflow-x-auto">
           <button
             onClick={() => setTab("challenge")}
-            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px flex items-center gap-1.5 ${
+            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
               tab === "challenge" ? "border-emerald-500 text-emerald-700" : "border-transparent text-zinc-500 hover:text-zinc-700"
             }`}
           >
             🧩 Challenge
           </button>
 
-          {(["videos", "problems"] as const).map((t) => {
-            const labels = { videos: "Videos", problems: "Problems" };
-            const counts = {
-              videos: topic.videos.length,
-              problems: topic.subtopics.reduce((s, st) => s + st.problems.length, 0),
-            };
-            return (
-              <button key={t} onClick={() => setTab(t)}
-                className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${
-                  tab === t ? "border-sky-500 text-sky-600" : "border-transparent text-zinc-500 hover:text-zinc-700"
-                }`}
-              >
-                {labels[t]}
-                {(counts[t] ?? 0) > 0 && <span className="ml-1.5 text-xs text-zinc-400">({counts[t]})</span>}
-              </button>
-            );
-          })}
+          <button
+            onClick={() => setTab("tutor")}
+            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
+              tab === "tutor" ? "border-sky-500 text-sky-700" : "border-transparent text-zinc-500 hover:text-zinc-700"
+            }`}
+          >
+            🧠 Learn with AI
+          </button>
 
-          {/* Learn with AI */}
-          {topic.subtopics.some(st => st.play_cards.length > 0) && (
-            <Link
-              href={`/topics/${topic.slug}/learn`}
-              className="px-4 py-2 text-sm font-medium text-sky-600 hover:text-sky-700 border-b-2 border-transparent -mb-px transition-colors flex items-center gap-1.5"
-            >
-              Learn with AI
-              <span className="text-xs text-zinc-400">({topic.subtopics.reduce((s, st) => s + st.play_cards.length, 0)})</span>
-              <span className="text-xs">↗</span>
-            </Link>
-          )}
+          <button onClick={() => setTab("videos")}
+            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
+              tab === "videos" ? "border-sky-500 text-sky-600" : "border-transparent text-zinc-500 hover:text-zinc-700"
+            }`}
+          >
+            Videos
+            {topic.videos.length > 0 && <span className="ml-1.5 text-xs text-zinc-400">({topic.videos.length})</span>}
+          </button>
+
         </div>
 
         {/* Tab content */}
         {tab === "challenge" && <ChallengeTab slug={slug} />}
+        {tab === "tutor" && <TutorTab slug={slug} />}
 
         {tab === "videos" && (
           topic.videos.length === 0
@@ -618,7 +1497,6 @@ export default function TopicPage() {
               </div>
         )}
 
-        {tab === "problems" && <ProblemsTab topic={topic} />}
       </main>
     </div>
   );

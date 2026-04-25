@@ -2,7 +2,7 @@ import enum
 from datetime import datetime, date
 from sqlalchemy import (
     Column, Integer, String, Float, Text, DateTime, Date,
-    ForeignKey, Enum, Boolean, JSON,
+    ForeignKey, Enum, Boolean, JSON, UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 from database import Base
@@ -273,3 +273,37 @@ class TurnLog(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     session = relationship("GateSession", back_populates="turns_log")
+
+
+class AiConfig(Base):
+    """Key-value store for AI prompt configuration, editable via admin UI."""
+    __tablename__ = "ai_config"
+
+    id = Column(Integer, primary_key=True, index=True)
+    key = Column(String, unique=True, nullable=False, index=True)
+    value = Column(Text, nullable=False)
+
+
+class TutorProgress(Base):
+    """Persists TutorTab state per user per topic so sessions can resume."""
+    __tablename__ = "tutor_progress"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    topic_slug = Column(String, nullable=False)
+    subtopic_idx = Column(Integer, default=0)
+    phase = Column(String, default="learning")  # learning|assessment|coding|final|done
+    completed_subtopics = Column(JSON, default=list)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (UniqueConstraint("user_id", "topic_slug"),)
+
+
+class LearnerProfile(Base):
+    """Rich JSON profile per user for AI context injection."""
+    __tablename__ = "learner_profiles"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
+    profile = Column(JSON, default=dict)  # {subtopics: [{slug, completed_at}], final_solved, ...}
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

@@ -229,6 +229,18 @@ export async function answerExercise(
   });
 }
 
+export async function tutorChat(
+  slug: string,
+  stage: number,
+  message: string,
+  history: Array<{ role: string; content: string }> = []
+): Promise<{ reply: string; advance: boolean }> {
+  return request(`/api/topics/${slug}/tutor`, {
+    method: "POST",
+    body: JSON.stringify({ stage, message, history }),
+  });
+}
+
 export async function chatWithPlaycard(
   playcardId: number,
   message: string,
@@ -240,8 +252,56 @@ export async function chatWithPlaycard(
   });
 }
 
+// ── Learner progress ──────────────────────────────────────────────────────────
+
+export interface TutorProgressState {
+  subtopic_idx: number;
+  phase: string;
+  completed_subtopics: number[];
+}
+
+export async function getTutorProgress(slug: string): Promise<TutorProgressState> {
+  return request(`/api/learner/tutor-progress/${slug}`);
+}
+
+export async function saveTutorProgress(slug: string, state: TutorProgressState): Promise<void> {
+  return request(`/api/learner/tutor-progress/${slug}`, {
+    method: "POST",
+    body: JSON.stringify(state),
+  });
+}
+
+export interface LearnerSubtopicEntry {
+  slug: string;
+  topic_slug: string;
+  subtopic_idx: number;
+  completed_at: string;
+}
+
+export interface LearnerProfileData {
+  subtopics: LearnerSubtopicEntry[];
+  final_solved: boolean;
+  final_solved_at?: string;
+}
+
+export async function getLearnerProfile(): Promise<LearnerProfileData> {
+  return request("/api/learner/profile");
+}
+
+export async function completeSubtopic(topic_slug: string, subtopic_slug: string, subtopic_idx: number): Promise<void> {
+  return request("/api/learner/complete-subtopic", {
+    method: "POST",
+    body: JSON.stringify({ topic_slug, subtopic_slug, subtopic_idx }),
+  });
+}
+
+export async function completeFinal(): Promise<void> {
+  return request("/api/learner/complete-final", { method: "POST" });
+}
+
 // ── Admin ─────────────────────────────────────────────────────────────────────
 
+export interface VideoFile { filename: string; size: number }
 export interface AdminOverview { topics: number; subtopics: number; playcards: number; problems: number; users: number }
 export interface AdminTopic { id: number; slug: string; title: string; description: string; icon: string; color: string; level: number; position_in_level: number; prerequisites: string[]; subtopics_count: number }
 export interface AdminPlayCard { id: number; title: string; content: string; order_index: number; ai_summary?: string | null; audio_file?: string | null }
@@ -279,4 +339,23 @@ export const adminApi = {
   createProblem: (data: object) => request<{ id: number; slug: string }>("/api/admin/problems", { method: "POST", body: JSON.stringify(data) }),
   updateProblem: (id: number, data: object) => request("/api/admin/problems/" + id, { method: "PUT", body: JSON.stringify(data) }),
   deleteProblem: (id: number) => request("/api/admin/problems/" + id, { method: "DELETE" }),
+
+  getAiConfig: () => request<Record<string, string>>("/api/admin/ai-config"),
+  saveAiConfig: (updates: Record<string, string>) => request("/api/admin/ai-config", { method: "PUT", body: JSON.stringify({ updates }) }),
+
+  listVideoFiles: () => request<VideoFile[]>("/api/admin/videos/files"),
+  deleteVideoFile: (filename: string) => request(`/api/admin/videos/files/${encodeURIComponent(filename)}`, { method: "DELETE" }),
+  uploadVideo: async (file: File): Promise<VideoFile> => {
+    const token = getToken();
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(`${BASE}/api/admin/videos/upload`, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    });
+    if (!res.ok) { const e = await res.json().catch(() => ({ detail: res.statusText })); throw new Error(e.detail); }
+    return res.json();
+  },
+  listYoutubeVideos: () => request<Array<{ id: number; title: string; youtube_id: string; topic_id: number; order_index: number }>>("/api/admin/videos"),
 };

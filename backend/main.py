@@ -7,10 +7,19 @@ from fastapi.staticfiles import StaticFiles
 
 from database import engine
 import models
-from routers import auth, problems, sessions, progress, topics, admin
+from routers import auth, problems, sessions, progress, topics, admin, learner
 
 # Create all tables on startup
 models.Base.metadata.create_all(bind=engine)
+
+# Seed AI config defaults (no-op if already seeded)
+from database import SessionLocal as _SessionLocal
+from socratic_engine import seed_ai_config as _seed_ai_config
+_seed_db = _SessionLocal()
+try:
+    _seed_ai_config(_seed_db)
+finally:
+    _seed_db.close()
 
 app = FastAPI(title="Logos API", version="0.1.0")
 
@@ -39,11 +48,17 @@ app.include_router(sessions.router)
 app.include_router(progress.router)
 app.include_router(topics.router)
 app.include_router(admin.router)
+app.include_router(learner.router)
 
 # Serve pre-generated playcard audio files
 AUDIO_DIR = Path(__file__).parent / "audio"
 AUDIO_DIR.mkdir(exist_ok=True)
 app.mount("/audio", StaticFiles(directory=str(AUDIO_DIR)), name="audio")
+
+# Serve uploaded video files
+VIDEOS_DIR = Path(__file__).parent / "static" / "videos"
+VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/static/videos", StaticFiles(directory=str(VIDEOS_DIR)), name="videos")
 
 
 @app.get("/health")

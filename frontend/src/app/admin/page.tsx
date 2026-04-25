@@ -1,45 +1,29 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { adminApi, AdminOverview } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 
 export default function AdminDashboard() {
   const { user, loading: authLoading, logout } = useAuth();
   const router = useRouter();
-  const [overview, setOverview] = useState<AdminOverview | null>(null);
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (authLoading) return;
     if (!user) { router.replace("/auth/login"); return; }
-    if (!user.is_admin) { router.replace("/topics"); return; }
-    adminApi.overview()
-      .then(setOverview)
-      .finally(() => setLoading(false));
+    if (!user.is_admin) { router.replace("/demo"); return; }
   }, [user, authLoading, router]);
 
-  if (authLoading || loading) {
+  if (authLoading) {
     return <div className="min-h-screen flex items-center justify-center text-zinc-500 text-sm">Loading...</div>;
   }
-
-  const stats = [
-    { label: "Topics", value: overview?.topics, href: "/admin/topics", icon: "🗂️" },
-    { label: "Subtopics", value: overview?.subtopics, href: "/admin/topics", icon: "📑" },
-    { label: "PlayCards", value: overview?.playcards, href: "/admin/topics", icon: "🃏" },
-    { label: "Problems", value: overview?.problems, href: "/admin/problems", icon: "💻" },
-    { label: "Users", value: overview?.users, href: "#", icon: "👤" },
-  ];
 
   return (
     <div className="min-h-screen text-zinc-800">
       <nav className="border-b border-zinc-200 bg-white/80 backdrop-blur-sm sticky top-0 z-10 px-6 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Link href="/topics" className="text-zinc-800 font-bold text-lg">Logos</Link>
+        <div className="flex items-center gap-3">
+          <Link href="/demo" className="text-zinc-800 font-bold text-lg">Logos</Link>
           <span className="text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full border border-amber-200 font-semibold">ADMIN</span>
-          <Link href="/admin/topics" className="text-zinc-600 text-sm hover:text-zinc-800 transition-colors">Topics</Link>
-          <Link href="/admin/problems" className="text-zinc-600 text-sm hover:text-zinc-800 transition-colors">Problems</Link>
         </div>
         <div className="flex items-center gap-3 text-sm">
           <span className="text-zinc-400">{user?.email}</span>
@@ -47,44 +31,28 @@ export default function AdminDashboard() {
         </div>
       </nav>
 
-      <main className="max-w-4xl mx-auto px-6 py-10">
-        <h1 className="text-2xl font-bold text-zinc-800 mb-1">Admin Dashboard</h1>
-        <p className="text-zinc-500 text-sm mb-8">Manage all course content from here.</p>
+      <main className="max-w-xl mx-auto px-6 py-12 space-y-4">
+        <h1 className="text-2xl font-bold text-zinc-800 mb-6">Admin</h1>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-10">
-          {stats.map((s) => (
-            <Link
-              key={s.label}
-              href={s.href}
-              className="p-4 rounded-xl border border-zinc-200 bg-white hover:border-sky-300 hover:shadow-sm transition-colors text-center"
-            >
-              <div className="text-2xl mb-1">{s.icon}</div>
-              <div className="text-2xl font-bold text-zinc-800">{s.value ?? "–"}</div>
-              <div className="text-xs text-zinc-500 mt-0.5">{s.label}</div>
-            </Link>
-          ))}
-        </div>
+        <Link
+          href="/admin/ai-script"
+          className="block p-6 rounded-2xl border border-zinc-200 bg-white hover:border-sky-300 hover:shadow-sm transition-all"
+        >
+          <div className="text-xl font-semibold text-zinc-800 mb-1">🤖 AI Model Script</div>
+          <p className="text-sm text-zinc-500 leading-relaxed">
+            View and edit <code className="font-mono text-xs bg-zinc-100 px-1 py-0.5 rounded">socratic_engine.py</code> — Gemini prompts, retry logic, and Socratic tutor stages.
+          </p>
+        </Link>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Link
-            href="/admin/topics"
-            className="p-5 rounded-xl border border-zinc-200 bg-white hover:border-sky-300 hover:shadow-sm transition-colors"
-          >
-            <div className="text-lg font-semibold text-zinc-800 mb-1">📚 Curriculum Editor</div>
-            <div className="text-sm text-zinc-500">
-              Create and edit topics, subtopics, playcards, and YouTube videos.
-            </div>
-          </Link>
-          <Link
-            href="/admin/problems"
-            className="p-5 rounded-xl border border-zinc-200 bg-white hover:border-sky-300 hover:shadow-sm transition-colors"
-          >
-            <div className="text-lg font-semibold text-zinc-800 mb-1">💻 Problem Bank</div>
-            <div className="text-sm text-zinc-500">
-              Add and edit coding problems with test cases, starter code, and concepts.
-            </div>
-          </Link>
-        </div>
+        <Link
+          href="/admin/videos"
+          className="block p-6 rounded-2xl border border-zinc-200 bg-white hover:border-sky-300 hover:shadow-sm transition-all"
+        >
+          <div className="text-xl font-semibold text-zinc-800 mb-1">🎥 Videos</div>
+          <p className="text-sm text-zinc-500 leading-relaxed">
+            Upload video files to the server and manage YouTube links for course topics.
+          </p>
+        </Link>
       </main>
     </div>
   );

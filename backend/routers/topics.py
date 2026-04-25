@@ -325,6 +325,33 @@ def answer_exercise(
     return ExerciseAnswerResponse(correct=correct, feedback=feedback, explanation=ex.explanation)
 
 
+class TutorRequest(BaseModel):
+    stage: int
+    message: str
+    history: list[dict] = []
+
+
+class TutorResponse(BaseModel):
+    reply: str
+    advance: bool
+
+
+@router.post("/{slug}/tutor", response_model=TutorResponse)
+def tutor_chat(
+    slug: str,
+    req: TutorRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    topic = db.query(models.Topic).filter(models.Topic.slug == slug).first()
+    if not topic:
+        raise HTTPException(status_code=404, detail="Topic not found")
+    raw = se.tutor_respond(stage=req.stage, message=req.message, history=req.history)
+    advance = "[ADVANCE]" in raw
+    clean = raw.replace("[ADVANCE]", "").strip()
+    return TutorResponse(reply=clean, advance=advance)
+
+
 @router.post("/playcards/{playcard_id}/chat", response_model=ChatResponse)
 def chat_with_playcard(
     playcard_id: int,

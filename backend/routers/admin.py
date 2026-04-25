@@ -2,7 +2,8 @@
 Admin API — full CRUD for all course content.
 Every endpoint requires is_admin=True on the current user.
 """
-from fastapi import APIRouter, Depends, HTTPException
+from pathlib import Path
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Any
@@ -10,6 +11,9 @@ from typing import Any
 from database import get_db
 import models
 from auth import get_current_user
+
+SOCRATIC_ENGINE_PATH = Path(__file__).parent.parent / "socratic_engine.py"
+VIDEOS_DIR = Path(__file__).parent.parent / "static" / "videos"
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -407,3 +411,71 @@ def delete_problem(problem_id: int, db: Session = Depends(get_db), _=Depends(req
     db.delete(p)
     db.commit()
     return {"ok": True}
+
+
+# ── AI Config (prompt management) ─────────────────────────────────────────────
+
+@router.get("/ai-config")
+def get_ai_config(db: Session = Depends(get_db), _=Depends(require_admin)):
+    rows = db.query(models.AiConfig).all()
+    return {r.key: r.value for r in rows}
+
+
+class AiConfigIn(BaseModel):
+    updates: dict[str, str]
+
+@router.put("/ai-config")
+def save_ai_config(data: AiConfigIn, db: Session = Depends(get_db), _=Depends(require_admin)):
+    for key, value in data.updates.items():
+        row = db.query(models.AiConfig).filter_by(key=key).first()
+        if row:
+            row.value = value
+        else:
+            db.add(models.AiConfig(key=key, value=value))
+    db.commit()
+    return {"ok": True}
+
+
+# ── Video file upload ─────────────────────────────────────────────────────────
+
+@router.get("/videos/files")
+def list_video_files(_=Depends(require_admin)):
+    VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
+    return [
+        {"filename": f.name, "size": f.stat().st_size}
+        for f in sorted(VIDEOS_DIR.iterdir())
+        if f.is_file() and f.suffix.lower() in {".mp4", ".webm", ".mov", ".avi"}
+    ]
+
+
+@router.post("/videos/upload", status_code=201)
+async def upload_video(file: UploadFile = File(...), _=Depends(require_admin)):
+    VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
+    filename = Path(file.filename or "upload").name.replace(" ", "_")
+    dest = VIDEOS_DIR / filename
+    content = await file.read()
+    dest.write_bytes(content)
+    return {"filename": filename, "size": len(content)}
+
+
+@router.delete("/videos/files/{filename}")
+def delete_video_file(filename: str, _=Depends(require_admin)):
+    if "/" in filename or ".." in filename:
+        raise HTTPException(400, detail="Invalid filename")
+    path = VIDEOS_DIR / filename
+    if not path.exists():
+        raise HTTPException(404, detail="File not found")
+    path.unlink()
+    return {"ok": True}
+
+
+# ── Videos list (YouTube) ─────────────────────────────────────────────────────
+
+@router.get("/videos")
+def list_videos(db: Session = Depends(get_db), _=Depends(require_admin)):
+    videos = db.query(models.YoutubeVideo).order_by(models.YoutubeVideo.topic_id, models.YoutubeVideo.order_index).all()
+    return [
+        {"id": v.id, "title": v.title, "youtube_id": v.youtube_id,
+         "topic_id": v.topic_id, "order_index": v.order_index}
+        for v in videos
+    ]
