@@ -973,12 +973,26 @@ function CodingPlayground({ problem, isHard, onComplete }: {
   const [values, setValues] = useState<string[]>(Array(problem.blanks.length).fill(""));
   const [results, setResults] = useState<boolean[] | null>(null);
   const [showHint, setShowHint] = useState(false);
+  const [attempts, setAttempts] = useState(0);
+  const [revealed, setRevealed] = useState(false);
   const allCorrect = results?.every(Boolean) ?? false;
 
   function check() {
-    setResults(values.map((v, i) =>
+    const next = values.map((v, i) =>
       v.replace(/\s/g, "") === problem.blanks[i].answer.replace(/\s/g, "")
-    ));
+    );
+    setResults(next);
+    if (!next.every(Boolean)) {
+      const newAttempts = attempts + 1;
+      setAttempts(newAttempts);
+      if (newAttempts >= 1) setShowHint(true);
+    }
+  }
+
+  function revealAnswers() {
+    setValues(problem.blanks.map(b => b.answer));
+    setResults(problem.blanks.map(() => true));
+    setRevealed(true);
   }
 
   return (
@@ -1033,9 +1047,25 @@ function CodingPlayground({ problem, isHard, onComplete }: {
           </div>
         ))}
       </div>
+
       {results && !allCorrect && (
-        <p className="text-sm text-red-600">Some blanks are incorrect — red fields need fixing.</p>
+        <div className="space-y-3">
+          <p className="text-sm text-red-600">Some blanks are incorrect — red fields need fixing.</p>
+          {attempts >= 2 && (
+            <div className="p-4 rounded-xl bg-sky-50 border border-sky-200 space-y-3">
+              <p className="text-sm text-sky-800 font-medium">Stuck? No problem — here&apos;s the answer so you can keep moving.</p>
+              <p className="text-xs text-sky-700 leading-relaxed">
+                Understanding the <em>why</em> matters more than typing it from memory. Read the filled answers carefully before continuing.
+              </p>
+              <button onClick={revealAnswers}
+                className="w-full py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-sm font-semibold transition-colors">
+                Show Answers &amp; Continue
+              </button>
+            </div>
+          )}
+        </div>
       )}
+
       {!allCorrect ? (
         <button onClick={check} disabled={values.some(v => !v.trim())}
           className="w-full py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 text-white font-semibold text-sm transition-colors">
@@ -1043,8 +1073,10 @@ function CodingPlayground({ problem, isHard, onComplete }: {
         </button>
       ) : (
         <div className="space-y-3">
-          <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm text-center font-medium">
-            🎉 {isHard ? "All correct! Full knapsack with backtracking solved." : "All correct! Ready for the next subtopic."}
+          <div className={`p-4 rounded-xl text-sm text-center font-medium ${revealed ? "bg-sky-50 border border-sky-200 text-sky-800" : "bg-emerald-50 border border-emerald-200 text-emerald-800"}`}>
+            {revealed
+              ? "Answers revealed — read them carefully, then continue when ready."
+              : `🎉 ${isHard ? "All correct! Full knapsack with backtracking solved." : "All correct! Ready for the next subtopic."}`}
           </div>
           <button onClick={onComplete}
             className={`w-full py-2.5 rounded-xl text-white font-semibold text-sm transition-colors ${isHard ? "bg-emerald-600 hover:bg-emerald-500" : "bg-sky-600 hover:bg-sky-500"}`}>
