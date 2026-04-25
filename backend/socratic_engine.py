@@ -439,12 +439,12 @@ def seed_ai_config(db) -> None:
 
 
 _TUTOR_BREVITY_RULE = """
-STRICT OUTPUT FORMAT (override everything else):
-- Maximum 3 sentences of response + exactly 1 Socratic question.
-- Hard limit: 60 words total (not counting [ADVANCE]).
-- NEVER write step-by-step walkthroughs, numbered lists, bullet points, or multiple sub-questions.
-- If you want to show a trace, summarise it in ONE sentence ("left-to-right gives dp[4]=6 because...").
-- End with ONE question. Nothing after the question mark except [ADVANCE] if warranted.
+OUTPUT FORMAT (non-negotiable):
+- Hard limit: 120 words total (not counting [ADVANCE]).
+- You MAY use up to 3 short bullet points to clarify a concept or show a comparison — keep each bullet under 15 words.
+- You MAY include ONE short inline code snippet (single line) if it makes the idea clearer.
+- NEVER write a full step-by-step array trace (e.g. w=1, w=2, w=3... for every index). Summarise in one sentence instead.
+- Always end with exactly ONE question. Nothing after the question mark except [ADVANCE] if earned.
 """
 
 
@@ -472,7 +472,7 @@ def tutor_respond(
         contents=contents,
         config=gtypes.GenerateContentConfig(
             system_instruction=system,
-            max_output_tokens=250,
+            max_output_tokens=400,
         ),
     )
     return response.text.strip()
