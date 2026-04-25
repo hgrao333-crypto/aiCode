@@ -280,7 +280,10 @@ def _gemini_text(prompt: str, max_tokens: int = 256) -> str:
     """Single-turn Gemini call. Returns the text response."""
     response = _gemini_generate(
         contents=prompt,
-        config=gtypes.GenerateContentConfig(max_output_tokens=max_tokens),
+        config=gtypes.GenerateContentConfig(
+            max_output_tokens=max_tokens,
+            thinking_config=gtypes.ThinkingConfig(thinking_budget=0),
+        ),
     )
     return response.text.strip()
 
@@ -472,7 +475,8 @@ def tutor_respond(
         contents=contents,
         config=gtypes.GenerateContentConfig(
             system_instruction=system,
-            max_output_tokens=400,
+            max_output_tokens=1024,
+            thinking_config=gtypes.ThinkingConfig(thinking_budget=0),
         ),
     )
     return response.text.strip()
@@ -502,7 +506,8 @@ def chat_about_playcard(
         contents=contents,
         config=gtypes.GenerateContentConfig(
             system_instruction=system,
-            max_output_tokens=512,
+            max_output_tokens=1024,
+            thinking_config=gtypes.ThinkingConfig(thinking_budget=0),
         ),
     )
     return response.text.strip()
