@@ -352,6 +352,29 @@ def tutor_chat(
     return TutorResponse(reply=clean, advance=advance)
 
 
+@router.post("/subtopics/{subtopic_id}/mark-passed")
+def mark_subtopic_passed(
+    subtopic_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    st = db.query(models.SubTopic).filter_by(id=subtopic_id).first()
+    if not st:
+        raise HTTPException(status_code=404, detail="Subtopic not found")
+    progress = db.query(models.UserSubTopicProgress).filter_by(
+        user_id=current_user.id, subtopic_id=subtopic_id
+    ).first()
+    if progress:
+        progress.gate_passed = True
+    else:
+        progress = models.UserSubTopicProgress(
+            user_id=current_user.id, subtopic_id=subtopic_id, gate_passed=True
+        )
+        db.add(progress)
+    db.commit()
+    return {"ok": True}
+
+
 @router.post("/playcards/{playcard_id}/chat", response_model=ChatResponse)
 def chat_with_playcard(
     playcard_id: int,

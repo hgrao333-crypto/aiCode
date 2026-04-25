@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
-import { getTopic, getUserStats, tutorChat, TopicDetail, UserStats, getTutorProgress, saveTutorProgress, completeSubtopic, completeFinal } from "@/lib/api";
+import { getTopic, getUserStats, tutorChat, TopicDetail, SubTopicDetail, UserStats, getTutorProgress, saveTutorProgress, completeSubtopic, completeFinal, markSubtopicPassed } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 
 // ─── Tab types ─────────────────────────────────────────────────────────────────
@@ -297,7 +297,7 @@ function KnapsackStage({ stageData, onComplete }: { stageData: StageData; onComp
   );
 }
 
-function ChallengeTab({ slug }: { slug: string }) {
+function ChallengeTab({ slug, onComplete }: { slug: string; onComplete: () => void }) {
   const [stageIdx, setStageIdx] = useState(0);
   const [completed, setCompleted] = useState(false);
 
@@ -335,12 +335,12 @@ function ChallengeTab({ slug }: { slug: string }) {
             </div>
           ))}
         </div>
-        <Link
-          href={`/topics/${slug}/learn`}
+        <button
+          onClick={onComplete}
           className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-semibold transition-colors shadow-sm"
         >
           Learn the DP Solution →
-        </Link>
+        </button>
       </div>
     );
   }
@@ -1058,7 +1058,7 @@ function CodingPlayground({ problem, isHard, onComplete }: {
 
 // ── TutorTab ──────────────────────────────────────────────────────────────────
 
-function TutorTab({ slug }: { slug: string }) {
+function TutorTab({ slug, subtopics, onSubtopicPassed }: { slug: string; subtopics: SubTopicDetail[]; onSubtopicPassed: () => void }) {
   const [subtopicIdx, setSubtopicIdx] = useState(0);
   const [phase, setPhase] = useState<"learning" | "assessment" | "coding" | "final" | "done">("learning");
   const [completedSubtopics, setCompletedSubtopics] = useState<number[]>([]);
@@ -1118,6 +1118,10 @@ function TutorTab({ slug }: { slug: string }) {
       ? completedSubtopics : [...completedSubtopics, subtopicIdx];
     setCompletedSubtopics(newCompleted);
     completeSubtopic(slug, `stage-${subtopicIdx + 1}`, subtopicIdx).catch(() => {});
+    const dbSubtopicId = subtopics[subtopicIdx]?.id;
+    if (dbSubtopicId) {
+      markSubtopicPassed(dbSubtopicId).then(onSubtopicPassed).catch(() => {});
+    }
     const next = subtopicIdx + 1;
     if (next < SUBTOPICS.length) {
       setSubtopicIdx(next);
@@ -1384,6 +1388,7 @@ export default function TopicPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [tab, setTab] = useState<Tab>("challenge");
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/auth/login");
@@ -1395,7 +1400,7 @@ export default function TopicPage() {
       .then(([t, s]) => { setTopic(t); setUserStats(s); })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [user, slug]);
+  }, [user, slug, refreshKey]);
 
   if (authLoading || loading) {
     return <div className="min-h-screen flex items-center justify-center"><div className="text-zinc-500 text-sm">Loading topic...</div></div>;
@@ -1486,8 +1491,8 @@ export default function TopicPage() {
         </div>
 
         {/* Tab content */}
-        {tab === "challenge" && <ChallengeTab slug={slug} />}
-        {tab === "tutor" && <TutorTab slug={slug} />}
+        {tab === "challenge" && <ChallengeTab slug={slug} onComplete={() => setTab("tutor")} />}
+        {tab === "tutor" && <TutorTab slug={slug} subtopics={topic.subtopics} onSubtopicPassed={() => setRefreshKey(k => k + 1)} />}
 
         {tab === "videos" && (
           topic.videos.length === 0

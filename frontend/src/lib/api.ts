@@ -241,6 +241,10 @@ export async function tutorChat(
   });
 }
 
+export async function markSubtopicPassed(subtopicId: number): Promise<void> {
+  return request(`/api/topics/subtopics/${subtopicId}/mark-passed`, { method: "POST" });
+}
+
 export async function chatWithPlaycard(
   playcardId: number,
   message: string,
