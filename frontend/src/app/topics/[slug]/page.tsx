@@ -1088,6 +1088,35 @@ function CodingPlayground({ problem, isHard, onComplete }: {
   );
 }
 
+// ── Chat markdown renderer ────────────────────────────────────────────────────
+
+type MarkdownProps = { className?: string; children?: React.ReactNode; [k: string]: unknown };
+const ChatMarkdown = {
+  p: ({ children }: MarkdownProps) => <p className="text-[15px] text-zinc-700 leading-[1.75] mb-2 last:mb-0">{children}</p>,
+  strong: ({ children }: MarkdownProps) => <strong className="font-semibold text-zinc-900">{children}</strong>,
+  em: ({ children }: MarkdownProps) => <em className="italic text-zinc-600">{children}</em>,
+  ul: ({ children }: MarkdownProps) => <ul className="my-2 space-y-1 list-none pl-0">{children}</ul>,
+  li: ({ children }: MarkdownProps) => (
+    <li className="flex gap-2 text-[15px] text-zinc-700 leading-[1.75]">
+      <span className="mt-[7px] w-1.5 h-1.5 rounded-full bg-indigo-400 flex-shrink-0" /><span>{children}</span>
+    </li>
+  ),
+  code: ({ className, children }: MarkdownProps) => {
+    const isBlock = Boolean(className);
+    const lang = (className as string | undefined)?.replace("language-", "") ?? "";
+    if (isBlock) return (
+      <div className="my-3 rounded-xl overflow-hidden border border-zinc-700 shadow-md">
+        {lang && <div className="px-4 py-1.5 bg-zinc-800 border-b border-zinc-700 text-[11px] font-mono text-zinc-400 tracking-widest uppercase">{lang}</div>}
+        <pre className="bg-zinc-900 px-4 py-3.5 overflow-x-auto m-0">
+          <code className="text-[12.5px] font-mono leading-relaxed text-zinc-100">{children}</code>
+        </pre>
+      </div>
+    );
+    return <code className="bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded text-[12.5px] font-mono border border-indigo-100">{children}</code>;
+  },
+  pre: ({ children }: MarkdownProps) => <>{children}</>,
+};
+
 // ── TutorTab ──────────────────────────────────────────────────────────────────
 
 function TutorTab({ slug, subtopics, onSubtopicPassed }: { slug: string; subtopics: SubTopicDetail[]; onSubtopicPassed: () => void }) {
@@ -1101,12 +1130,12 @@ function TutorTab({ slug, subtopics, onSubtopicPassed }: { slug: string; subtopi
   const [loading, setLoading] = useState(false);
   const [advancing, setAdvancing] = useState(false);
   const [progressLoaded, setProgressLoaded] = useState(false);
+  const [contextOpen, setContextOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const current = SUBTOPICS[subtopicIdx];
 
-  // Load persisted progress on mount
   useEffect(() => {
     getTutorProgress(slug).then(p => {
       const idx = Math.min(p.subtopic_idx, SUBTOPICS.length - 1);
@@ -1116,34 +1145,27 @@ function TutorTab({ slug, subtopics, onSubtopicPassed }: { slug: string; subtopi
         ? p.phase as typeof phase : "learning";
       setPhase(validPhase);
       setMessages([{ role: "assistant", content: SUBTOPICS[idx].opener }]);
-    }).catch(() => {/* ignore — start fresh */}).finally(() => setProgressLoaded(true));
+    }).catch(() => {}).finally(() => setProgressLoaded(true));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug]);
 
-  // Auto-save whenever navigable state changes (skip initial render before load)
   useEffect(() => {
     if (!progressLoaded) return;
     saveTutorProgress(slug, { subtopic_idx: subtopicIdx, phase, completed_subtopics: completedSubtopics }).catch(() => {});
   }, [slug, subtopicIdx, phase, completedSubtopics, progressLoaded]);
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  useEffect(() => {
-    if (!loading && !advancing) inputRef.current?.focus();
-  }, [loading, advancing]);
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+  useEffect(() => { if (!loading && !advancing) inputRef.current?.focus(); }, [loading, advancing]);
 
   function jumpToSubtopic(idx: number) {
     if (idx === subtopicIdx && phase === "learning") return;
     setSubtopicIdx(idx);
     setPhase("learning");
+    setContextOpen(false);
     setMessages([{ role: "assistant", content: SUBTOPICS[idx].opener }]);
   }
 
-  function handleAssessmentComplete() {
-    setPhase("coding");
-  }
+  function handleAssessmentComplete() { setPhase("coding"); }
 
   function handleCodingComplete() {
     const newCompleted = completedSubtopics.includes(subtopicIdx)
@@ -1151,9 +1173,7 @@ function TutorTab({ slug, subtopics, onSubtopicPassed }: { slug: string; subtopi
     setCompletedSubtopics(newCompleted);
     completeSubtopic(slug, `stage-${subtopicIdx + 1}`, subtopicIdx).catch(() => {});
     const dbSubtopicId = subtopics[subtopicIdx]?.id;
-    if (dbSubtopicId) {
-      markSubtopicPassed(dbSubtopicId).then(onSubtopicPassed).catch(() => {});
-    }
+    if (dbSubtopicId) markSubtopicPassed(dbSubtopicId).then(onSubtopicPassed).catch(() => {});
     const next = subtopicIdx + 1;
     if (next < SUBTOPICS.length) {
       setSubtopicIdx(next);
@@ -1190,18 +1210,18 @@ function TutorTab({ slug, subtopics, onSubtopicPassed }: { slug: string; subtopi
 
   if (phase === "done") {
     return (
-      <div className="text-center py-12 space-y-6 max-w-xl mx-auto">
-        <div className="text-5xl">🏆</div>
-        <h2 className="text-xl font-bold text-zinc-800">You&apos;ve mastered the Knapsack Problem</h2>
-        <p className="text-zinc-600 text-sm leading-relaxed">
-          Five subtopics. Ten assessment questions. Five coding exercises. One final challenge.
-          From greedy failure to backtracking the items chosen — layered, permanent understanding.
+      <div className="text-center py-14 space-y-6 max-w-lg mx-auto">
+        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center text-3xl mx-auto shadow-lg">🏆</div>
+        <h2 className="text-2xl font-bold text-zinc-800 tracking-tight">Course Complete</h2>
+        <p className="text-zinc-500 leading-relaxed">
+          Five subtopics. Ten assessment questions. Five coding exercises. One final challenge.<br/>
+          You built genuine DP intuition from scratch.
         </p>
         <div className="grid grid-cols-5 gap-2 text-xs text-center">
           {SUBTOPICS.map(s => (
-            <div key={s.stage} className="p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 leading-tight">
-              <div className="text-xl mb-1">{s.icon}</div>
-              {s.title}
+            <div key={s.stage} className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 leading-tight">
+              <div className="text-2xl mb-1.5">{s.icon}</div>
+              <div className="font-medium">{s.title}</div>
             </div>
           ))}
         </div>
@@ -1209,94 +1229,134 @@ function TutorTab({ slug, subtopics, onSubtopicPassed }: { slug: string; subtopi
     );
   }
 
-  if (phase === "final") {
-    return (
-      <div className="space-y-5">
-        <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 flex items-center gap-3">
-          <span className="text-xl">🏆</span>
-          <div>
-            <div className="text-sm font-semibold text-amber-800">Final Challenge</div>
-            <div className="text-xs text-amber-700">All 5 subtopics complete. One hard problem to cement everything.</div>
-          </div>
+  if (phase === "final") return (
+    <div className="space-y-5">
+      <div className="flex items-center gap-3 p-4 rounded-2xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-xl shadow-sm">🏆</div>
+        <div>
+          <div className="font-semibold text-amber-900">Final Challenge</div>
+          <div className="text-xs text-amber-700 mt-0.5">All 5 subtopics complete — one hard problem to cement everything.</div>
         </div>
-        <SubtopicNav {...navProps} />
-        <CodingPlayground problem={FINAL_PROBLEM} isHard={true} onComplete={() => { completeFinal().catch(() => {}); setPhase("done"); }} />
       </div>
-    );
-  }
+      <SubtopicNav {...navProps} />
+      <CodingPlayground problem={FINAL_PROBLEM} isHard={true} onComplete={() => { completeFinal().catch(() => {}); setPhase("done"); }} />
+    </div>
+  );
 
-  if (phase === "coding") {
-    return (
-      <div className="space-y-5">
-        <SubtopicNav {...navProps} />
-        <CodingPlayground problem={CODING_PROBLEMS[subtopicIdx]} isHard={false} onComplete={handleCodingComplete} />
-      </div>
-    );
-  }
-
-  if (phase === "assessment") {
-    return (
-      <div className="space-y-5">
-        <SubtopicNav {...navProps} />
-        <AssessmentPhase cfg={current} onComplete={handleAssessmentComplete} />
-      </div>
-    );
-  }
-
-  return (
+  if (phase === "coding") return (
     <div className="space-y-5">
       <SubtopicNav {...navProps} />
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
-        <div className="lg:col-span-2 space-y-4">
-          <div className="p-4 rounded-xl bg-white border border-zinc-200 shadow-sm">
-            <div className="text-xs font-bold text-zinc-500 uppercase tracking-wide mb-2">Key Concepts</div>
-            <div className="space-y-1.5">
-              {current.concepts.map((c, i) => (
-                <div key={i} className="flex items-center gap-2 text-xs text-zinc-600">
-                  <span className="w-1.5 h-1.5 rounded-full bg-sky-400 flex-shrink-0" />{c}
-                </div>
-              ))}
+      <CodingPlayground problem={CODING_PROBLEMS[subtopicIdx]} isHard={false} onComplete={handleCodingComplete} />
+    </div>
+  );
+
+  if (phase === "assessment") return (
+    <div className="space-y-5">
+      <SubtopicNav {...navProps} />
+      <AssessmentPhase cfg={current} onComplete={handleAssessmentComplete} />
+    </div>
+  );
+
+  // ── Learning phase — full-width rich chat ─────────────────────────────────
+  return (
+    <div className="space-y-4">
+      <SubtopicNav {...navProps} />
+
+      {/* Collapsible visual context card */}
+      <div className="rounded-2xl border border-zinc-200 bg-white overflow-hidden shadow-sm">
+        <button
+          onClick={() => setContextOpen(o => !o)}
+          className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-zinc-50 transition-colors text-left"
+        >
+          <div className="flex items-center gap-3">
+            <span className="text-xl">{current.icon}</span>
+            <div>
+              <div className="text-sm font-semibold text-zinc-800">{current.title}</div>
+              <div className="text-xs text-zinc-500 mt-0.5">{current.concepts.join(" · ")}</div>
             </div>
           </div>
-          <SubtopicVisual stage={current.stage} />
-        </div>
-        <div className="lg:col-span-3 flex flex-col" style={{ height: 500 }}>
-          <div className="flex-1 overflow-y-auto space-y-3 p-4 rounded-t-xl border border-b-0 border-zinc-200 bg-zinc-50">
-            {messages.map((msg, i) => (
-              <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                <div className={`max-w-[88%] px-4 py-2.5 rounded-2xl text-sm ${
-                  msg.role === "user" ? "bg-sky-600 text-white" : "bg-white border border-zinc-200 shadow-sm text-zinc-800"
-                }`}>
-                  {msg.role === "assistant" ? (
-                    <div className="prose prose-sm max-w-none prose-pre:bg-zinc-50 prose-pre:border prose-pre:border-zinc-200 prose-code:text-sky-600 prose-p:my-1 prose-ul:my-1">
-                      <ReactMarkdown>{msg.content}</ReactMarkdown>
-                    </div>
-                  ) : msg.content}
-                </div>
-              </div>
-            ))}
-            {(loading || advancing) && (
-              <div className="flex justify-start">
-                <div className="bg-white border border-zinc-200 shadow-sm px-4 py-2.5 rounded-2xl text-sm text-zinc-400">
-                  {advancing ? "Check your understanding →" : "Thinking..."}
-                </div>
-              </div>
-            )}
-            <div ref={bottomRef} />
+          <span className="text-xs text-zinc-400 font-medium select-none">
+            {contextOpen ? "Hide visual ▲" : "Show visual ▼"}
+          </span>
+        </button>
+        {contextOpen && (
+          <div className="px-5 pb-5 border-t border-zinc-100 pt-4">
+            <SubtopicVisual stage={current.stage} />
           </div>
-          <div className="flex gap-2 p-3 border border-zinc-200 rounded-b-xl bg-white">
-            <input ref={inputRef} type="text" value={input}
+        )}
+      </div>
+
+      {/* Chat window */}
+      <div className="rounded-2xl border border-zinc-200 overflow-hidden shadow-sm bg-white">
+        {/* Message list */}
+        <div className="h-[520px] overflow-y-auto px-5 py-6 space-y-6 bg-[#fafafa]">
+          {messages.map((msg, i) =>
+            msg.role === "assistant" ? (
+              <div key={i} className="flex gap-3.5 items-start">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0 shadow-md mt-0.5 select-none">
+                  ✦
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[10px] font-bold text-indigo-400 tracking-[0.12em] uppercase mb-2 select-none">Logos AI</div>
+                  <ReactMarkdown components={ChatMarkdown as Parameters<typeof ReactMarkdown>[0]["components"]}>{msg.content}</ReactMarkdown>
+                </div>
+              </div>
+            ) : (
+              <div key={i} className="flex justify-end items-end gap-2">
+                <div className="max-w-[70%] bg-indigo-600 text-white rounded-2xl rounded-br-sm px-4 py-2.5 text-[15px] leading-[1.65] shadow-sm">
+                  {msg.content}
+                </div>
+                <div className="w-7 h-7 rounded-full bg-zinc-200 flex items-center justify-center text-zinc-500 text-xs flex-shrink-0 select-none">
+                  You
+                </div>
+              </div>
+            )
+          )}
+
+          {/* Typing indicator */}
+          {(loading || advancing) && (
+            <div className="flex gap-3.5 items-start">
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0 shadow-md mt-0.5">✦</div>
+              <div className="bg-white border border-zinc-200 shadow-sm rounded-2xl rounded-tl-sm px-4 py-3 flex items-center gap-1.5">
+                {advancing ? (
+                  <span className="text-sm text-indigo-500 font-medium">Moving to assessment...</span>
+                ) : (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: "0ms" }} />
+                    <span className="w-2 h-2 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: "160ms" }} />
+                    <span className="w-2 h-2 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: "320ms" }} />
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+          <div ref={bottomRef} />
+        </div>
+
+        {/* Input bar */}
+        <div className="px-4 pb-4 pt-3 border-t border-zinc-100 bg-white">
+          <div className="flex items-center gap-2 bg-zinc-50 border border-zinc-200 rounded-xl px-3.5 py-2 focus-within:border-indigo-300 focus-within:ring-2 focus-within:ring-indigo-50 transition-all">
+            <input
+              ref={inputRef}
+              type="text"
+              value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
-              placeholder="Type your answer and press Enter..."
+              placeholder="Share your thinking…"
               disabled={loading || advancing}
-              className="flex-1 text-sm bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 focus:outline-none focus:border-sky-400 transition-colors disabled:opacity-60 text-zinc-800 placeholder:text-zinc-400"
+              className="flex-1 bg-transparent text-[15px] text-zinc-800 placeholder:text-zinc-400 focus:outline-none disabled:opacity-50 py-0.5"
             />
-            <button onClick={sendMessage} disabled={!input.trim() || loading || advancing}
-              className="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 disabled:opacity-40 text-white text-sm font-medium transition-colors">
-              Send
+            <button
+              onClick={sendMessage}
+              disabled={!input.trim() || loading || advancing}
+              className="w-8 h-8 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white flex items-center justify-center transition-colors flex-shrink-0"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
+              </svg>
             </button>
           </div>
+          <p className="text-[11px] text-zinc-400 mt-1.5 text-center select-none">Press Enter to send</p>
         </div>
       </div>
     </div>
