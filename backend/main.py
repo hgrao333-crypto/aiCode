@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from database import engine
 import models
-from routers import auth, problems, sessions, progress, topics, admin, learner
+from routers import auth, problems, sessions, progress, topics, admin, learner, incidents
 
 # Create all tables on startup
 models.Base.metadata.create_all(bind=engine)
@@ -26,7 +26,7 @@ app = FastAPI(title="Logos API", version="0.1.0")
 # CORS must be added before any other middleware / exception handlers
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["http://localhost:3000", "https://sparktuner.online"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -49,6 +49,11 @@ app.include_router(progress.router)
 app.include_router(topics.router)
 app.include_router(admin.router)
 app.include_router(learner.router)
+app.include_router(incidents.router)
+
+# Seed incidents if not already seeded
+from seed_incidents import seed as _seed_incidents
+_seed_incidents()
 
 # Serve pre-generated playcard audio files
 AUDIO_DIR = Path(__file__).parent / "audio"

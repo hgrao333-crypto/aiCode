@@ -307,3 +307,120 @@ class LearnerProfile(Base):
     user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
     profile = Column(JSON, default=dict)  # {subtopics: [{slug, completed_at}], final_solved, ...}
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# ─── IncidentLab ─────────────────────────────────────────────────────────────
+
+class Incident(Base):
+    __tablename__ = "incidents"
+    id = Column(Integer, primary_key=True, index=True)
+    slug = Column(String, unique=True, nullable=False, index=True)
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=False)
+    difficulty = Column(String, nullable=False)   # EASY | MEDIUM | HARD
+    domain = Column(String, nullable=False)
+    order_index = Column(Integer, default=0)
+
+    videos = relationship("IncidentVideo", back_populates="incident", order_by="IncidentVideo.order_index")
+    quiz = relationship("IncidentQuiz", back_populates="incident", uselist=False)
+    badge = relationship("IncidentBadge", back_populates="incident", uselist=False)
+    attempts = relationship("UserIncidentAttempt", back_populates="incident")
+
+
+class IncidentVideo(Base):
+    __tablename__ = "incident_videos"
+    id = Column(Integer, primary_key=True, index=True)
+    incident_id = Column(Integer, ForeignKey("incidents.id"), nullable=False)
+    title = Column(String, nullable=False)
+    mux_playback_id = Column(String, nullable=False)
+    duration_seconds = Column(Integer, nullable=False)
+    order_index = Column(Integer, default=0)
+
+    incident = relationship("Incident", back_populates="videos")
+    video_progress = relationship("UserVideoProgress", back_populates="video")
+
+
+class IncidentQuiz(Base):
+    __tablename__ = "incident_quizzes"
+    id = Column(Integer, primary_key=True, index=True)
+    incident_id = Column(Integer, ForeignKey("incidents.id"), unique=True, nullable=False)
+
+    incident = relationship("Incident", back_populates="quiz")
+    questions = relationship("IncidentQuizQuestion", back_populates="quiz", order_by="IncidentQuizQuestion.order_index")
+    attempts = relationship("UserQuizAttempt", back_populates="quiz")
+
+
+class IncidentQuizQuestion(Base):
+    __tablename__ = "incident_quiz_questions"
+    id = Column(Integer, primary_key=True, index=True)
+    quiz_id = Column(Integer, ForeignKey("incident_quizzes.id"), nullable=False)
+    question = Column(Text, nullable=False)
+    options = Column(JSON, nullable=False)       # list[str]
+    correct_index = Column(Integer, nullable=False)
+    explanation = Column(Text, nullable=True)
+    order_index = Column(Integer, default=0)
+
+    quiz = relationship("IncidentQuiz", back_populates="questions")
+
+
+class IncidentBadge(Base):
+    __tablename__ = "incident_badges"
+    id = Column(Integer, primary_key=True, index=True)
+    incident_id = Column(Integer, ForeignKey("incidents.id"), unique=True, nullable=False)
+    label = Column(String, nullable=False)
+    tagline = Column(String, nullable=True)
+    icon_url = Column(String, nullable=False)
+
+    incident = relationship("Incident", back_populates="badge")
+    user_badges = relationship("UserIncidentBadge", back_populates="badge")
+
+
+class UserVideoProgress(Base):
+    __tablename__ = "user_video_progress"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    video_id = Column(Integer, ForeignKey("incident_videos.id"), nullable=False)
+    watch_percent = Column(Integer, default=0)
+    completed_at = Column(DateTime, nullable=True)
+    __table_args__ = (UniqueConstraint("user_id", "video_id"),)
+
+    video = relationship("IncidentVideo", back_populates="video_progress")
+
+
+class UserQuizAttempt(Base):
+    __tablename__ = "user_quiz_attempts"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    quiz_id = Column(Integer, ForeignKey("incident_quizzes.id"), nullable=False)
+    score = Column(Integer, nullable=False)
+    passed = Column(Boolean, default=False)
+    answers = Column(JSON, nullable=False)       # {question_id: selected_index}
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    quiz = relationship("IncidentQuiz", back_populates="attempts")
+
+
+class UserIncidentAttempt(Base):
+    __tablename__ = "user_incident_attempts"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    incident_id = Column(Integer, ForeignKey("incidents.id"), nullable=False)
+    score = Column(Integer, default=0)
+    solved_at = Column(DateTime, nullable=True)
+    hints_used = Column(Integer, default=0)
+    hints_cost = Column(Integer, default=0)
+    submission = Column(JSON, nullable=True)     # {file_path: content}
+    started_at = Column(DateTime, default=datetime.utcnow)
+
+    incident = relationship("Incident", back_populates="attempts")
+
+
+class UserIncidentBadge(Base):
+    __tablename__ = "user_incident_badges"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    badge_id = Column(Integer, ForeignKey("incident_badges.id"), nullable=False)
+    earned_at = Column(DateTime, default=datetime.utcnow)
+    __table_args__ = (UniqueConstraint("user_id", "badge_id"),)
+
+    badge = relationship("IncidentBadge", back_populates="user_badges")

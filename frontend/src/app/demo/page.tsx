@@ -19,6 +19,91 @@ function NavXP({ stats }: { stats: UserStats | null }) {
   );
 }
 
+function IncidentLabCard() {
+  return (
+    <Link href="/incidents">
+      <div className="group relative p-8 rounded-2xl border border-zinc-700 bg-zinc-900 hover:border-zinc-500 hover:shadow-md transition-all cursor-pointer">
+        <div className="absolute -top-3 -right-3 flex items-center gap-1 bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-xs font-mono px-2 py-0.5 rounded-full">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          beta
+        </div>
+
+        <div className="w-full h-48 rounded-xl overflow-hidden mb-6 bg-zinc-800 flex items-center justify-center">
+          <div className="font-mono text-xs text-zinc-300 text-left w-full p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="h-2 w-2 rounded-full bg-red-500/70" />
+              <span className="h-2 w-2 rounded-full bg-amber-500/70" />
+              <span className="h-2 w-2 rounded-full bg-emerald-500/70" />
+              <span className="ml-1 text-zinc-500 text-xs">~/incidentlab</span>
+            </div>
+            <div className="text-zinc-400">$ <span className="text-zinc-300">psql -c &quot;SELECT count(*) FROM pg_stat_statements&quot;</span></div>
+            <div className="text-red-400 mt-1"> count: 51  {"<-- N+1 confirmed"}</div>
+            <div className="text-zinc-400 mt-1">$ <span className="text-zinc-300">make check</span></div>
+            <div className="text-emerald-400 mt-1">✔ incident resolved</div>
+          </div>
+        </div>
+
+        <div className="flex items-start gap-5 mb-6">
+          <div className="w-16 h-16 rounded-2xl bg-zinc-800 border border-zinc-700 flex items-center justify-center text-3xl flex-shrink-0">
+            🔥
+          </div>
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-xs px-2 py-0.5 bg-zinc-800 text-zinc-300 rounded-full border border-zinc-700 font-semibold">
+                DEMO COURSE
+              </span>
+              <span className="text-xs px-2 py-0.5 bg-red-500/20 text-red-400 rounded-full border border-red-500/30">On-call sim</span>
+            </div>
+            <h2 className="text-2xl font-bold text-zinc-100">IncidentLab</h2>
+            <p className="text-zinc-400 text-sm mt-1">
+              Drop into realistic production outages — slow queries, OOMKilled pods — with a real editor, terminal, and metrics. Watch, quiz, fix. Earn badges.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-6">
+          {[
+            { icon: "▶️", label: "Micro-video lessons" },
+            { icon: "✅", label: "4-question quizzes" },
+            { icon: "⚡", label: "Monaco + terminal" },
+            { icon: "🐘", label: "Postgres N+1" },
+            { icon: "☸️", label: "K8s OOMKilled" },
+            { icon: "🏅", label: "Earn badges" },
+          ].map((f) => (
+            <div key={f.label} className="flex items-center gap-2 text-sm text-zinc-400">
+              <span>{f.icon}</span>
+              <span>{f.label}</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="mb-6 space-y-2">
+          <div className="text-xs text-zinc-500 mb-2">2 incidents available</div>
+          {[
+            { slug: "postgres-n-plus-1", title: "Postgres N+1 Killing the API", difficulty: "MEDIUM", domain: "Backend · Database" },
+            { slug: "k8s-oomkilled", title: "K8s Pod OOMKilled on Deploy", difficulty: "HARD", domain: "DevOps · Kubernetes" },
+          ].map((inc) => (
+            <div key={inc.slug} className="flex items-center justify-between bg-zinc-800 rounded-lg px-3 py-2 border border-zinc-700">
+              <span className="text-sm text-zinc-300 font-mono">{inc.title}</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-zinc-500">{inc.domain}</span>
+                <span className={`text-xs px-1.5 py-0.5 rounded font-semibold ${inc.difficulty === "HARD" ? "bg-red-500/20 text-red-400" : "bg-amber-500/20 text-amber-400"}`}>
+                  {inc.difficulty}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold bg-zinc-700 hover:bg-zinc-600 text-zinc-100 transition-colors">
+          Open IncidentLab
+          <span>→</span>
+        </div>
+      </div>
+    </Link>
+  );
+}
+
 function CourseCard({ topic }: { topic: TopicListItem }) {
   const pct = topic.subtopics_total === 0 ? 0 : Math.round((topic.subtopics_passed / topic.subtopics_total) * 100);
   const started = topic.subtopics_passed > 0;
@@ -57,7 +142,7 @@ function CourseCard({ topic }: { topic: TopicListItem }) {
               )}
             </div>
             <h2 className="text-2xl font-bold text-zinc-800">{topic.title}</h2>
-            <p className="text-zinc-600 text-sm mt-1 max-w-lg">{topic.description}</p>
+            <p className="text-zinc-600 text-sm mt-1">{topic.description}</p>
           </div>
         </div>
 
@@ -127,7 +212,7 @@ export default function DemoPage() {
       <nav className="border-b border-zinc-200 bg-white/80 backdrop-blur-sm sticky top-0 z-10 px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-6">
           <Link href="/demo" className="text-zinc-800 font-bold text-lg">Logos</Link>
-          <Link href="/demo" className="text-emerald-600 text-sm font-medium">Demo Course</Link>
+          <Link href="/demo" className="text-emerald-600 text-sm font-medium">Demo Courses</Link>
         </div>
         <div className="flex items-center gap-4 text-sm">
           <NavXP stats={stats} />
@@ -136,21 +221,21 @@ export default function DemoPage() {
         </div>
       </nav>
 
-      <main className="max-w-3xl mx-auto px-6 py-12">
+      <main className="max-w-6xl mx-auto px-6 py-12">
         <div className="mb-10">
-          <h1 className="text-3xl font-bold text-zinc-800 mb-2">Demo Course</h1>
+          <h1 className="text-3xl font-bold text-zinc-800 mb-2">Demo Courses</h1>
           <p className="text-zinc-600">
-            A complete depth-first learning experience — five angles on one concept until it&apos;s genuinely yours.
+            Two AI-powered learning experiences — algorithms that stick, and production incidents you'll never forget.
           </p>
         </div>
 
-        {topics.length === 0 ? (
-          <div className="text-center py-16 text-zinc-500 text-sm">No demo courses available yet.</div>
-        ) : (
-          <div className="space-y-4">
-            {topics.map((t) => <CourseCard key={t.id} topic={t} />)}
-          </div>
-        )}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {topics.map((t) => <CourseCard key={t.id} topic={t} />)}
+          {topics.length === 0 && (
+            <div className="col-span-full text-center py-8 text-zinc-500 text-sm">No algorithm courses available yet.</div>
+          )}
+          <IncidentLabCard />
+        </div>
       </main>
     </div>
   );

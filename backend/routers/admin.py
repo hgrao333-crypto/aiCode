@@ -3,7 +3,9 @@ Admin API — full CRUD for all course content.
 Every endpoint requires is_admin=True on the current user.
 """
 from pathlib import Path
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from sqlalchemy import func, distinct
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Any
@@ -479,3 +481,96 @@ def list_videos(db: Session = Depends(get_db), _=Depends(require_admin)):
          "topic_id": v.topic_id, "order_index": v.order_index}
         for v in videos
     ]
+
+
+# ── Monitoring ────────────────────────────────────────────────────────────────
+
+@router.get("/monitoring")
+def monitoring(db: Session = Depends(get_db), _=Depends(require_admin)):
+    now = datetime.utcnow()
+    cutoff_7d = now - timedelta(days=7)
+    cutoff_30d = now - timedelta(days=30)
+
+    total_users = db.query(models.User).count()
+    new_users_7d = db.query(models.User).filter(models.User.created_at >= cutoff_7d).count()
+    new_users_30d = db.query(models.User).filter(models.User.created_at >= cutoff_30d).count()
+
+    # Signups per day for last 14 days
+    cutoff_14d = now - timedelta(days=14)
+    signup_rows = (
+        db.query(
+            func.date(models.User.created_at).label("day"),
+            func.count(models.User.id).label("count"),
+        )
+        .filter(models.User.created_at >= cutoff_14d)
+        .group_by(func.date(models.User.created_at))
+        .order_by(func.date(models.User.created_at))
+        .all()
+    )
+    signups_by_day = [{"date": str(r.day), "signups": r.count} for r in signup_rows]
+
+    # Active users: distinct users who created a gate session or incident attempt in last 7 days
+    active_gate_ids = (
+        db.query(models.GateSession.user_id)
+        .filter(models.GateSession.created_at >= cutoff_7d)
+        .distinct()
+    )
+    active_incident_ids = (
+        db.query(models.UserIncidentAttempt.user_id)
+        .filter(models.UserIncidentAttempt.started_at >= cutoff_7d)
+        .distinct()
+    )
+    active_users_7d = (
+        db.query(func.count(distinct(models.User.id)))
+        .filter(
+            models.User.id.in_(active_gate_ids) |
+            models.User.id.in_(active_incident_ids)
+        )
+        .scalar() or 0
+    )
+
+    gate_sessions_total = db.query(models.GateSession).count()
+    gate_sessions_7d = db.query(models.GateSession).filter(models.GateSession.created_at >= cutoff_7d).count()
+
+    quiz_attempts_total = db.query(models.UserQuizAttempt).count()
+    quiz_passed_total = db.query(models.UserQuizAttempt).filter(models.UserQuizAttempt.passed == True).count()
+    quiz_attempts_7d = db.query(models.UserQuizAttempt).filter(models.UserQuizAttempt.created_at >= cutoff_7d).count()
+
+    incidents_started_total = db.query(models.UserIncidentAttempt).count()
+    incidents_solved_total = db.query(models.UserIncidentAttempt).filter(models.UserIncidentAttempt.solved_at.isnot(None)).count()
+    incidents_started_7d = db.query(models.UserIncidentAttempt).filter(models.UserIncidentAttempt.started_at >= cutoff_7d).count()
+
+    badges_earned_total = db.query(models.UserIncidentBadge).count()
+    video_completions_total = db.query(models.UserVideoProgress).filter(models.UserVideoProgress.completed_at.isnot(None)).count()
+
+    # Gate sessions per day for last 14 days (AI tutor activity)
+    tutor_rows = (
+        db.query(
+            func.date(models.GateSession.created_at).label("day"),
+            func.count(models.GateSession.id).label("count"),
+        )
+        .filter(models.GateSession.created_at >= cutoff_14d)
+        .group_by(func.date(models.GateSession.created_at))
+        .order_by(func.date(models.GateSession.created_at))
+        .all()
+    )
+    tutor_by_day = [{"date": str(r.day), "sessions": r.count} for r in tutor_rows]
+
+    return {
+        "total_users": total_users,
+        "new_users_7d": new_users_7d,
+        "new_users_30d": new_users_30d,
+        "active_users_7d": active_users_7d,
+        "signups_by_day": signups_by_day,
+        "gate_sessions_total": gate_sessions_total,
+        "gate_sessions_7d": gate_sessions_7d,
+        "tutor_by_day": tutor_by_day,
+        "quiz_attempts_total": quiz_attempts_total,
+        "quiz_passed_total": quiz_passed_total,
+        "quiz_attempts_7d": quiz_attempts_7d,
+        "incidents_started_total": incidents_started_total,
+        "incidents_solved_total": incidents_solved_total,
+        "incidents_started_7d": incidents_started_7d,
+        "badges_earned_total": badges_earned_total,
+        "video_completions_total": video_completions_total,
+    }

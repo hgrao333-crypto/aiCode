@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/context/AuthContext";
+import { Toaster } from "@/components/ui/toaster";
 
 const mono = Geist_Mono({ subsets: ["latin"], variable: "--font-mono" });
 
@@ -15,6 +16,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body className={`${mono.variable} font-mono antialiased min-h-screen`}>
         <AuthProvider>{children}</AuthProvider>
+        <Toaster />
       </body>
     </html>
   );

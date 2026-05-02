@@ -53,6 +53,16 @@ export default function AdminDashboard() {
             Upload video files to the server and manage YouTube links for course topics.
           </p>
         </Link>
+
+        <Link
+          href="/admin/monitoring"
+          className="block p-6 rounded-2xl border border-zinc-200 bg-white hover:border-sky-300 hover:shadow-sm transition-all"
+        >
+          <div className="text-xl font-semibold text-zinc-800 mb-1">📊 Monitoring</div>
+          <p className="text-sm text-zinc-500 leading-relaxed">
+            User signups, active users, AI tutor sessions, IncidentLab solves, quiz pass rates, and more.
+          </p>
+        </Link>
       </main>
     </div>
   );

@@ -303,6 +303,115 @@ export async function completeFinal(): Promise<void> {
   return request("/api/learner/complete-final", { method: "POST" });
 }
 
+// ── Incidents (IncidentLab) ───────────────────────────────────────────────────
+
+export interface IncidentWithStage {
+  id: number;
+  slug: string;
+  title: string;
+  description: string;
+  difficulty: "EASY" | "MEDIUM" | "HARD";
+  domain: string;
+  stage: "locked" | "learn" | "quiz" | "play" | "done";
+  video_progress: number;
+  best_score: number | null;
+  badge_earned: boolean;
+}
+
+export interface IncidentVideo {
+  id: number;
+  title: string;
+  mux_playback_id: string;
+  duration_seconds: number;
+  watch_percent: number;
+  completed: boolean;
+}
+
+export interface IncidentQuestion {
+  id: number;
+  question: string;
+  options: string[];
+  explanation?: string | null;
+}
+
+export interface IncidentDetail extends IncidentWithStage {
+  videos: IncidentVideo[];
+  quiz: { id: number; questions: IncidentQuestion[] } | null;
+  badge: { id: number; label: string; tagline: string | null; icon_url: string } | null;
+}
+
+export interface QuizResult {
+  score: number;
+  passed: boolean;
+  correct_count: number;
+  total_count: number;
+}
+
+export interface SubmitFixResult {
+  passed: boolean;
+  score: number;
+  checks: Array<{ label: string; ok: boolean; detail?: string }>;
+  attempt_id: number;
+  badge?: { label: string; icon_url: string } | null;
+}
+
+export interface DebriefAttempt {
+  id: number;
+  score: number;
+  solved: boolean;
+  hints_used: number;
+  elapsed_seconds: number;
+  submission: Record<string, string>;
+  badge?: { label: string; tagline: string | null; icon_url: string; earned_at: string } | null;
+}
+
+export async function listIncidents(): Promise<IncidentWithStage[]> {
+  return request("/api/incidents/");
+}
+
+export async function getIncidentDetail(slug: string): Promise<IncidentDetail> {
+  return request(`/api/incidents/${slug}`);
+}
+
+export async function updateVideoProgress(slug: string, videoId: number, watchPercent: number): Promise<void> {
+  return request(`/api/incidents/${slug}/video-progress`, {
+    method: "POST",
+    body: JSON.stringify({ video_id: videoId, watch_percent: watchPercent }),
+  });
+}
+
+export async function submitQuiz(slug: string, quizId: number, answers: Record<number, number>): Promise<QuizResult> {
+  return request(`/api/incidents/${slug}/quiz-attempt`, {
+    method: "POST",
+    body: JSON.stringify({ quiz_id: quizId, answers }),
+  });
+}
+
+export async function submitFix(
+  slug: string,
+  files: Record<string, string>,
+  elapsedSeconds: number,
+  hintsUsed: number,
+  hintsCost: number,
+): Promise<SubmitFixResult> {
+  return request(`/api/incidents/${slug}/submit-fix`, {
+    method: "POST",
+    body: JSON.stringify({ files, elapsed_seconds: elapsedSeconds, hints_used: hintsUsed, hints_cost: hintsCost }),
+  });
+}
+
+export async function getDebrief(slug: string, attemptId?: number): Promise<DebriefAttempt> {
+  const qs = attemptId ? `?attempt_id=${attemptId}` : "";
+  return request(`/api/incidents/${slug}/debrief${qs}`);
+}
+
+export async function demoSkip(slug: string, target: "videos" | "quiz"): Promise<void> {
+  return request("/api/incidents/demo-skip", {
+    method: "POST",
+    body: JSON.stringify({ slug, target }),
+  });
+}
+
 // ── Admin ─────────────────────────────────────────────────────────────────────
 
 export interface VideoFile { filename: string; size: number }
@@ -362,4 +471,24 @@ export const adminApi = {
     return res.json();
   },
   listYoutubeVideos: () => request<Array<{ id: number; title: string; youtube_id: string; topic_id: number; order_index: number }>>("/api/admin/videos"),
+  getMonitoring: () => request<AdminMonitoring>("/api/admin/monitoring"),
 };
+
+export interface AdminMonitoring {
+  total_users: number;
+  new_users_7d: number;
+  new_users_30d: number;
+  active_users_7d: number;
+  signups_by_day: Array<{ date: string; signups: number }>;
+  gate_sessions_total: number;
+  gate_sessions_7d: number;
+  tutor_by_day: Array<{ date: string; sessions: number }>;
+  quiz_attempts_total: number;
+  quiz_passed_total: number;
+  quiz_attempts_7d: number;
+  incidents_started_total: number;
+  incidents_solved_total: number;
+  incidents_started_7d: number;
+  badges_earned_total: number;
+  video_completions_total: number;
+}
