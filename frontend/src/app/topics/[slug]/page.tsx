@@ -5,10 +5,11 @@ import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import { getTopic, getUserStats, tutorChat, TopicDetail, SubTopicDetail, UserStats, getTutorProgress, saveTutorProgress, completeSubtopic, completeFinal, markSubtopicPassed } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
+import { TopicExplorer } from "./explorer";
 
 // ─── Tab types ─────────────────────────────────────────────────────────────────
 
-type Tab = "challenge" | "tutor" | "videos";
+type Tab = "explore" | "tutor" | "problems" | "videos";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CHALLENGE: Knapsack interactive puzzle
@@ -679,9 +680,240 @@ const FINAL_PROBLEM: CodingProblem = {
   hint: "Backtracking: if dp[i][cap] == dp[i-1][cap], the value didn't change → item i was skipped. If it changed, item i was taken — append it and subtract its weight from cap.",
 };
 
+// ── Arrays & Hashing tutor config ────────────────────────────────────────────
+
+const AH_SUBTOPICS: SubtopicCfg[] = [
+  {
+    stage: 1, title: "Memory & Indexing", icon: "🧱",
+    concepts: ["Contiguous memory", "Base + offset formula", "O(1) random access"],
+    opener: "Here's an array [10, 20, 30, 40] stored in memory starting at address 1000, each element taking 4 bytes. You want arr[2]. How does Python find it instantly — without scanning index 0 and 1 first?",
+    assessment: [
+      {
+        type: "mcq",
+        q: "Why is arr[i] O(1) while a linked-list lookup is O(n)?",
+        options: [
+          "Python caches the most recently accessed elements",
+          "Array elements sit at address base + i×size — a direct calculation, no scanning",
+          "Python uses binary search inside the array",
+          "The OS pre-loads small arrays into registers",
+        ],
+        correct: 1,
+        explanation: "Arrays are contiguous — element i is always at base + i × element_size. Python computes this address directly (one multiply + add). A linked list must follow pointers one node at a time → O(n).",
+      },
+      {
+        type: "debug",
+        q: "This function returns the correct value but is much slower than it needs to be. What's wrong?",
+        code: `def get_at_index(arr, i):
+    count = 0
+    for item in arr:
+        if count == i:
+            return item
+        count += 1`,
+        explanation: "This is O(n) — it scans from the front every time. Python's arr[i] uses the formula address = base + i×size and reads memory in one step. Never loop to simulate index access on a list.",
+      },
+    ],
+  },
+  {
+    stage: 2, title: "How Hashing Works", icon: "🗝️",
+    concepts: ["Hash function", "Buckets", "O(1) average lookup"],
+    opener: "A Python dict stores 'apple': 5. When you write d['apple'], Python returns 5 in O(1) — without looping through every key. How?",
+    assessment: [
+      {
+        type: "mcq",
+        q: "What does a hash function do in a hash map?",
+        options: [
+          "Sorts the keys for binary search",
+          "Maps any key to a fixed bucket index for direct O(1) access",
+          "Encrypts the key before storage",
+          "Counts how many times the key has been inserted",
+        ],
+        correct: 1,
+        explanation: "hash(key) converts the key to an integer. bucket = hash(key) % num_buckets. Python reads exactly that bucket — no search needed. Average O(1) for both get and set.",
+      },
+      {
+        type: "trace",
+        q: "freq = {}; freq['a'] = freq.get('a', 0) + 1; freq['b'] = freq.get('b', 0) + 1; freq['a'] = freq.get('a', 0) + 1. What is freq['a']?",
+        hint: "Start empty. Trace each assignment. How many times is 'a' incremented?",
+        answer: "2",
+        explanation: "Line 1: freq['a'] = 0+1 = 1. Line 3: freq['a'] = 1+1 = 2. freq['b'] = 1. dict.get(key, 0)+1 is the standard frequency-counting idiom.",
+      },
+    ],
+  },
+  {
+    stage: 3, title: "The Complement Trick", icon: "🎯",
+    concepts: ["Single-pass hash map", "Complement lookup", "O(n) time, O(n) space"],
+    opener: "Array [2, 7, 11, 15], target = 9. Brute force: for every pair (i, j) check if they sum to 9 — that's O(n²). Can you do it in a single pass? What would you need to keep track of?",
+    assessment: [
+      {
+        type: "mcq",
+        q: "In the one-pass Two Sum solution, what does the hash map store?",
+        options: [
+          "All pairs (i, j) whose elements sum to target",
+          "Each number and its index — {value: index}",
+          "All numbers in sorted order",
+          "The count of each number",
+        ],
+        correct: 1,
+        explanation: "seen = {value: index}. At each num, check if (target−num) is already in seen. If yes → return [seen[target−num], i]. If no → store seen[num] = i and continue. One pass, O(n) time.",
+      },
+      {
+        type: "debug",
+        q: "This Two Sum runs in O(n²) instead of O(n). What's the bug?",
+        code: `def two_sum(nums, target):
+    seen = []
+    for i, n in enumerate(nums):
+        comp = target - n
+        if comp in seen:
+            return [seen.index(comp), i]
+        seen.append(n)
+    return []`,
+        explanation: "`seen` is a list — `comp in seen` is O(n) and `.index(comp)` is O(n). Change to a dict: `seen = {}`, store `seen[n] = i`, and look up `seen[comp]` for O(1). Same logic, O(n) total.",
+      },
+    ],
+  },
+];
+
+const AH_CODING_PROBLEMS: CodingProblem[] = [
+  {
+    title: "Frequency Counter",
+    description: "Count how many times each number appears. Use dict.get(key, default) to handle missing keys without a KeyError.",
+    code: `def count_frequencies(nums):
+    freq = {}
+    for num in nums:
+        freq[num] = freq.[1](num, 0) + [2]
+    return freq`,
+    blanks: [
+      { label: "Dict method that returns a default if key is absent", answer: "get" },
+      { label: "Increment the count by this amount each time", answer: "1" },
+    ],
+    hint: "dict.get(key, 0) returns the current count or 0 if the key doesn't exist yet. Add 1 to that to increment.",
+  },
+  {
+    title: "Contains Duplicate",
+    description: "Return True if any value appears more than once. A set gives O(1) membership tests — better than a list's O(n).",
+    code: `def contains_duplicate(nums):
+    seen = [1]
+    for n in nums:
+        if n in seen:
+            return [2]
+        seen.add(n)
+    return False`,
+    blanks: [
+      { label: "Data structure with O(1) membership tests (not a list)", answer: "set()" },
+      { label: "Return value when a duplicate is found", answer: "True" },
+    ],
+    hint: "A set has O(1) `in` checks. If the number is already in the set, it's a duplicate. Otherwise, add it and keep scanning.",
+  },
+  {
+    title: "Valid Anagram",
+    description: "Two strings are anagrams if they use the same letters the same number of times. Count up for s, count down for t.",
+    code: `def is_anagram(s, t):
+    if len(s) != len(t):
+        return False
+    count = {}
+    for c in s:
+        count[c] = count.[1](c, 0) + 1
+    for c in t:
+        count[c] = count.[2](c, 0) - 1
+        if count[c] < [3]:
+            return False
+    return True`,
+    blanks: [
+      { label: "Dict method to get current count (default 0) — for s loop", answer: "get" },
+      { label: "Dict method to get current count (default 0) — for t loop", answer: "get" },
+      { label: "Threshold: a negative count means t has more of this letter than s", answer: "0" },
+    ],
+    hint: "Count each letter in s (+1), then subtract for each letter in t (−1). If any count goes negative, t has more of that letter than s → not an anagram.",
+  },
+];
+
+const AH_FINAL_PROBLEM: CodingProblem = {
+  title: "Two Sum — One Pass",
+  description: "Hard: find indices of the two numbers that sum to target. O(n) time, O(n) space. Fill the complement formula, the index lookup, and the storage line.",
+  code: `def two_sum(nums, target):
+    seen = {}   # {value: index}
+    for i, n in enumerate(nums):
+        complement = [1]
+        if complement in seen:
+            return [[2], i]
+        seen[n] = [3]
+    return []`,
+  blanks: [
+    { label: "Number that pairs with n to reach target", answer: "target - n" },
+    { label: "Index of the complement (retrieve from seen dict)", answer: "seen[complement]" },
+    { label: "Store current number's index so future elements can find it", answer: "i" },
+  ],
+  hint: "For each n, check if its partner (target−n) was already seen. Store {value: index} so you can retrieve the partner's index in O(1) when needed.",
+};
+
+// ── Topic tutor config registry ───────────────────────────────────────────────
+
+interface TopicTutorCfg { subtopics: SubtopicCfg[]; codingProblems: CodingProblem[]; finalProblem: CodingProblem }
+
+const TOPIC_TUTOR_CONFIG: Record<string, TopicTutorCfg> = {
+  "knapsack":            { subtopics: SUBTOPICS, codingProblems: CODING_PROBLEMS, finalProblem: FINAL_PROBLEM },
+  "dynamic-programming": { subtopics: SUBTOPICS, codingProblems: CODING_PROBLEMS, finalProblem: FINAL_PROBLEM },
+  "arrays-hashing":      { subtopics: AH_SUBTOPICS, codingProblems: AH_CODING_PROBLEMS, finalProblem: AH_FINAL_PROBLEM },
+};
+
 // ── Visual aid per subtopic ───────────────────────────────────────────────────
 
-function SubtopicVisual({ stage }: { stage: number }) {
+function SubtopicVisual({ stage, slug }: { stage: number; slug: string }) {
+  if (slug === "arrays-hashing") {
+    if (stage === 1) return (
+      <div className="p-4 rounded-xl bg-white border border-zinc-200 shadow-sm space-y-3">
+        <div className="text-xs font-bold text-zinc-500 uppercase tracking-wide">Memory Layout</div>
+        <div className="font-mono text-xs space-y-1.5">
+          <div className="text-zinc-500">arr = [10, 20, 30, 40]  (base = 1000, 4 bytes each)</div>
+          {[0,1,2,3].map(i => (
+            <div key={i} className={`flex items-center gap-3 p-1.5 rounded-lg ${i===2?"bg-sky-50 border border-sky-200":""}`}>
+              <span className="text-zinc-400 w-20">addr {1000+i*4}</span>
+              <span className={`font-bold ${i===2?"text-sky-600":"text-zinc-700"}`}>{[10,20,30,40][i]}</span>
+              <span className="text-zinc-400">← arr[{i}]{i===2?" ← you want this":""}</span>
+            </div>
+          ))}
+        </div>
+        <div className="p-2.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-mono">
+          <span className="text-sky-600 font-bold">addr</span> = 1000 + 2 × 4 = <span className="text-emerald-600 font-bold">1008</span> — direct, no scan
+        </div>
+      </div>
+    );
+    if (stage === 2) return (
+      <div className="p-4 rounded-xl bg-white border border-zinc-200 shadow-sm space-y-3">
+        <div className="text-xs font-bold text-zinc-500 uppercase tracking-wide">Hash Map Buckets</div>
+        <div className="grid grid-cols-4 gap-1 text-xs font-mono">
+          {["apple→5","—","—","—","—","cat→2","—","dog→8"].map((v,i)=>(
+            <div key={i} className={`p-1.5 rounded-md text-center border ${v==="—"?"bg-zinc-50 border-zinc-200 text-zinc-300":"bg-indigo-50 border-indigo-200 text-indigo-700 font-semibold"}`}>
+              <div className="text-zinc-400 text-[10px] mb-0.5">b{i}</div>
+              {v}
+            </div>
+          ))}
+        </div>
+        <div className="text-xs text-zinc-500">
+          hash(&apos;apple&apos;) % 8 = <span className="text-indigo-600 font-bold">0</span> → read bucket 0 directly → O(1)
+        </div>
+      </div>
+    );
+    if (stage === 3) return (
+      <div className="p-4 rounded-xl bg-white border border-zinc-200 shadow-sm space-y-3">
+        <div className="text-xs font-bold text-zinc-500 uppercase tracking-wide">Two Sum: [2, 7, 11, 15], target=9</div>
+        <div className="text-xs font-mono space-y-1.5">
+          {[{n:2,comp:7,found:false,seen:"{}→{2:0}"},{n:7,comp:2,found:true,seen:"{2:0}"}].map((row,i)=>(
+            <div key={i} className={`flex items-center gap-2 p-1.5 rounded-lg ${row.found?"bg-emerald-50 border border-emerald-200":""}`}>
+              <span className="text-zinc-400 w-4">{i}</span>
+              <span className={row.found?"text-emerald-600 font-bold":"text-zinc-700"}>n={row.n}</span>
+              <span className="text-zinc-400">comp={row.comp}</span>
+              {row.found
+                ? <span className="text-emerald-600 font-bold ml-auto">✓ found! return [0,1]</span>
+                : <span className="text-zinc-500 ml-auto">store → {row.seen}</span>}
+            </div>
+          ))}
+        </div>
+        <div className="text-xs text-zinc-500">One pass, O(n). Each element: check complement → store or return.</div>
+      </div>
+    );
+    return null;
+  }
   if (stage === 1) return (
     <div className="p-4 rounded-xl bg-white border border-zinc-200 shadow-sm space-y-3">
       <div className="text-xs font-bold text-zinc-500 uppercase tracking-wide">Decision Tree</div>
@@ -934,13 +1166,13 @@ function renderCodeWithBlanks(code: string) {
   );
 }
 
-function SubtopicNav({ subtopicIdx, completedSubtopics, phase, onJump, onFinal }: {
-  subtopicIdx: number; completedSubtopics: number[]; phase: string;
+function SubtopicNav({ subtopics, subtopicIdx, completedSubtopics, phase, onJump, onFinal }: {
+  subtopics: SubtopicCfg[]; subtopicIdx: number; completedSubtopics: number[]; phase: string;
   onJump: (i: number) => void; onFinal: () => void;
 }) {
   return (
     <div className="flex gap-1.5 flex-wrap">
-      {SUBTOPICS.map((s, i) => {
+      {subtopics.map((s, i) => {
         const isDone = completedSubtopics.includes(i);
         const isCurrent = i === subtopicIdx && phase !== "final";
         return (
@@ -957,7 +1189,7 @@ function SubtopicNav({ subtopicIdx, completedSubtopics, phase, onJump, onFinal }
           </button>
         );
       })}
-      {completedSubtopics.length === SUBTOPICS.length && phase !== "final" && phase !== "done" && (
+      {completedSubtopics.length === subtopics.length && phase !== "final" && phase !== "done" && (
         <button onClick={onFinal}
           className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors border bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100">
           🏆 <span className="hidden sm:inline ml-1">Final Challenge</span>
@@ -1120,11 +1352,13 @@ const ChatMarkdown = {
 // ── TutorTab ──────────────────────────────────────────────────────────────────
 
 function TutorTab({ slug, subtopics, onSubtopicPassed }: { slug: string; subtopics: SubTopicDetail[]; onSubtopicPassed: () => void }) {
+  const cfg = TOPIC_TUTOR_CONFIG[slug] ?? TOPIC_TUTOR_CONFIG["knapsack"];
+
   const [subtopicIdx, setSubtopicIdx] = useState(0);
   const [phase, setPhase] = useState<"learning" | "assessment" | "coding" | "final" | "done">("learning");
   const [completedSubtopics, setCompletedSubtopics] = useState<number[]>([]);
   const [messages, setMessages] = useState<Array<{ role: string; content: string }>>([
-    { role: "assistant", content: SUBTOPICS[0].opener },
+    { role: "assistant", content: cfg.subtopics[0].opener },
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -1134,17 +1368,18 @@ function TutorTab({ slug, subtopics, onSubtopicPassed }: { slug: string; subtopi
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const current = SUBTOPICS[subtopicIdx];
+  const current = cfg.subtopics[subtopicIdx];
 
   useEffect(() => {
+    const topicCfg = TOPIC_TUTOR_CONFIG[slug] ?? TOPIC_TUTOR_CONFIG["knapsack"];
     getTutorProgress(slug).then(p => {
-      const idx = Math.min(p.subtopic_idx, SUBTOPICS.length - 1);
+      const idx = Math.min(p.subtopic_idx, topicCfg.subtopics.length - 1);
       setSubtopicIdx(idx);
       setCompletedSubtopics(p.completed_subtopics || []);
       const validPhase = ["learning","assessment","coding","final","done"].includes(p.phase)
         ? p.phase as typeof phase : "learning";
       setPhase(validPhase);
-      setMessages([{ role: "assistant", content: SUBTOPICS[idx].opener }]);
+      setMessages([{ role: "assistant", content: topicCfg.subtopics[idx].opener }]);
     }).catch(() => {}).finally(() => setProgressLoaded(true));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug]);
@@ -1162,7 +1397,7 @@ function TutorTab({ slug, subtopics, onSubtopicPassed }: { slug: string; subtopi
     setSubtopicIdx(idx);
     setPhase("learning");
     setContextOpen(false);
-    setMessages([{ role: "assistant", content: SUBTOPICS[idx].opener }]);
+    setMessages([{ role: "assistant", content: cfg.subtopics[idx].opener }]);
   }
 
   function handleAssessmentComplete() { setPhase("coding"); }
@@ -1175,10 +1410,10 @@ function TutorTab({ slug, subtopics, onSubtopicPassed }: { slug: string; subtopi
     const dbSubtopicId = subtopics[subtopicIdx]?.id;
     if (dbSubtopicId) markSubtopicPassed(dbSubtopicId).then(onSubtopicPassed).catch(() => {});
     const next = subtopicIdx + 1;
-    if (next < SUBTOPICS.length) {
+    if (next < cfg.subtopics.length) {
       setSubtopicIdx(next);
       setPhase("learning");
-      setMessages([{ role: "assistant", content: SUBTOPICS[next].opener }]);
+      setMessages([{ role: "assistant", content: cfg.subtopics[next].opener }]);
     } else {
       setPhase("final");
     }
@@ -1206,7 +1441,7 @@ function TutorTab({ slug, subtopics, onSubtopicPassed }: { slug: string; subtopi
     }
   }
 
-  const navProps = { subtopicIdx, completedSubtopics, phase, onJump: jumpToSubtopic, onFinal: () => setPhase("final") };
+  const navProps = { subtopics: cfg.subtopics, subtopicIdx, completedSubtopics, phase, onJump: jumpToSubtopic, onFinal: () => setPhase("final") };
 
   if (phase === "done") {
     return (
@@ -1214,11 +1449,11 @@ function TutorTab({ slug, subtopics, onSubtopicPassed }: { slug: string; subtopi
         <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center text-3xl mx-auto shadow-lg">🏆</div>
         <h2 className="text-2xl font-bold text-zinc-800 tracking-tight">Course Complete</h2>
         <p className="text-zinc-500 leading-relaxed">
-          Five subtopics. Ten assessment questions. Five coding exercises. One final challenge.<br/>
-          You built genuine DP intuition from scratch.
+          {cfg.subtopics.length} subtopics. {cfg.subtopics.length * 2} assessment questions. {cfg.subtopics.length} coding exercises. One final challenge.<br/>
+          You built genuine intuition from scratch.
         </p>
-        <div className="grid grid-cols-5 gap-2 text-xs text-center">
-          {SUBTOPICS.map(s => (
+        <div className={`grid gap-2 text-xs text-center`} style={{ gridTemplateColumns: `repeat(${cfg.subtopics.length}, minmax(0, 1fr))` }}>
+          {cfg.subtopics.map(s => (
             <div key={s.stage} className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 leading-tight">
               <div className="text-2xl mb-1.5">{s.icon}</div>
               <div className="font-medium">{s.title}</div>
@@ -1235,18 +1470,18 @@ function TutorTab({ slug, subtopics, onSubtopicPassed }: { slug: string; subtopi
         <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-xl shadow-sm">🏆</div>
         <div>
           <div className="font-semibold text-amber-900">Final Challenge</div>
-          <div className="text-xs text-amber-700 mt-0.5">All 5 subtopics complete — one hard problem to cement everything.</div>
+          <div className="text-xs text-amber-700 mt-0.5">All {cfg.subtopics.length} subtopics complete — one hard problem to cement everything.</div>
         </div>
       </div>
       <SubtopicNav {...navProps} />
-      <CodingPlayground problem={FINAL_PROBLEM} isHard={true} onComplete={() => { completeFinal().catch(() => {}); setPhase("done"); }} />
+      <CodingPlayground problem={cfg.finalProblem} isHard={true} onComplete={() => { completeFinal().catch(() => {}); setPhase("done"); }} />
     </div>
   );
 
   if (phase === "coding") return (
     <div className="space-y-5">
       <SubtopicNav {...navProps} />
-      <CodingPlayground problem={CODING_PROBLEMS[subtopicIdx]} isHard={false} onComplete={handleCodingComplete} />
+      <CodingPlayground problem={cfg.codingProblems[subtopicIdx]} isHard={false} onComplete={handleCodingComplete} />
     </div>
   );
 
@@ -1281,7 +1516,7 @@ function TutorTab({ slug, subtopics, onSubtopicPassed }: { slug: string; subtopi
         </button>
         {contextOpen && (
           <div className="px-5 pb-5 border-t border-zinc-100 pt-4">
-            <SubtopicVisual stage={current.stage} />
+            <SubtopicVisual stage={current.stage} slug={slug} />
           </div>
         )}
       </div>
@@ -1297,7 +1532,7 @@ function TutorTab({ slug, subtopics, onSubtopicPassed }: { slug: string; subtopi
                   ✦
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-[10px] font-bold text-indigo-400 tracking-[0.12em] uppercase mb-2 select-none">Logos AI</div>
+                  <div className="text-[10px] font-bold text-indigo-400 tracking-[0.12em] uppercase mb-2 select-none">Bodhix AI</div>
                   <ReactMarkdown components={ChatMarkdown as Parameters<typeof ReactMarkdown>[0]["components"]}>{msg.content}</ReactMarkdown>
                 </div>
               </div>
@@ -1455,12 +1690,12 @@ function NavXP({ stats }: { stats: UserStats | null }) {
   const pct = Math.round((stats.xp_in_level / stats.xp_to_next) * 100);
   return (
     <div className="flex items-center gap-2">
-      <div className="flex items-center gap-1.5 bg-white border border-zinc-200 rounded-full px-3 py-1 shadow-sm">
-        <span className="text-sky-600 text-xs font-bold">Lv.{stats.level}</span>
-        <div className="w-20 h-1.5 bg-zinc-200 rounded-full overflow-hidden">
-          <div className="h-full bg-sky-500 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
+      <div className="flex items-center gap-1.5 bg-bark-100 border border-bark-200 rounded-full px-3 py-1 shadow-sm">
+        <span className="text-leaf-700 text-xs font-bold">Lv.{stats.level}</span>
+        <div className="w-20 h-1.5 bg-bark-200 rounded-full overflow-hidden">
+          <div className="h-full bg-saffron-500 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
         </div>
-        <span className="text-zinc-500 text-xs">{stats.xp} XP</span>
+        <span className="text-bark-500 text-xs">{stats.xp} XP</span>
       </div>
       {stats.streak_days >= 2 && <span className="text-xs text-orange-500 font-semibold">🔥{stats.streak_days}</span>}
     </div>
@@ -1479,7 +1714,7 @@ export default function TopicPage() {
   const [userStats, setUserStats] = useState<UserStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [tab, setTab] = useState<Tab>("challenge");
+  const [tab, setTab] = useState<Tab>("explore");
   const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
@@ -1507,23 +1742,28 @@ export default function TopicPage() {
   const pct = totalSubtopics === 0 ? 0 : Math.round((totalPassed / totalSubtopics) * 100);
 
   return (
-    <div className="min-h-screen text-zinc-800">
-      <nav className="border-b border-zinc-200 bg-white/80 backdrop-blur-sm sticky top-0 z-10 px-6 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-6">
-          <Link href="/demo" className="text-zinc-800 font-bold text-lg">Logos</Link>
-          <Link href="/demo" className="text-zinc-600 text-sm hover:text-zinc-800 transition-colors">← Back</Link>
+    <div className="min-h-screen text-bark-900">
+      <nav className="border-b border-bark-200 bg-bark-50/90 backdrop-blur-sm sticky top-0 z-10 px-6 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <Link href="/demo" className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-md bg-leaf-700 flex items-center justify-center">
+              <svg width="12" height="16" viewBox="0 0 24 30" fill="none"><path d="M12 2C12 2 3 9 3 17C3 22 7 26 12 26C17 26 21 22 21 17C21 9 12 2 12 2Z" fill="#fcd99a" opacity="0.9"/><path d="M12 26 L11 30" stroke="#fcd99a" strokeWidth="1.5" strokeLinecap="round" opacity="0.7"/></svg>
+            </div>
+            <span className="font-display font-bold text-bark-900">Bodhix</span>
+          </Link>
+          <Link href="/demo" className="text-bark-500 text-sm hover:text-bark-800 transition-colors">← Back</Link>
         </div>
         <div className="flex items-center gap-4 text-sm">
           <NavXP stats={userStats} />
-          <span className="text-zinc-400 hidden sm:block">{user?.email}</span>
-          <button onClick={logout} className="text-zinc-600 hover:text-zinc-800 transition-colors">Sign out</button>
+          <span className="text-bark-400 hidden sm:block">{user?.email}</span>
+          <button onClick={logout} className="text-bark-500 hover:text-bark-900 transition-colors">Sign out</button>
         </div>
       </nav>
 
       <main className="max-w-5xl mx-auto px-6 py-8">
         {/* Topic header */}
         <div className="mb-6">
-          <div className="w-full h-52 rounded-2xl overflow-hidden mb-5 bg-zinc-100 border border-zinc-200 shadow-sm">
+          <div className="w-full h-52 rounded-2xl overflow-hidden mb-5 bg-bark-100 border border-bark-200 shadow-sm">
             <img
               src={`/images/topic_${topic.slug}.png`}
               alt={topic.title}
@@ -1534,16 +1774,16 @@ export default function TopicPage() {
           <div className="flex items-start gap-4">
             <div className="text-4xl">{topic.icon}</div>
             <div className="flex-1">
-              <h1 className="text-2xl font-bold text-zinc-800">{topic.title}</h1>
-              <p className="text-zinc-600 text-sm mt-1">{topic.description}</p>
+              <h1 className="font-display text-2xl font-bold text-bark-900">{topic.title}</h1>
+              <p className="text-bark-500 text-sm mt-1">{topic.description}</p>
               {totalSubtopics > 0 && (
                 <div className="mt-3 max-w-xs">
-                  <div className="flex justify-between text-xs text-zinc-500 mb-1">
+                  <div className="flex justify-between text-xs text-bark-500 mb-1">
                     <span>{totalPassed}/{totalSubtopics} subtopics passed</span>
-                    <span>{pct}%</span>
+                    <span className="text-leaf-700 font-semibold">{pct}%</span>
                   </div>
-                  <div className="h-1.5 bg-zinc-200 rounded-full overflow-hidden">
-                    <div className="h-full bg-sky-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                  <div className="h-1.5 bg-bark-100 rounded-full overflow-hidden">
+                    <div className="h-full bg-leaf-600 rounded-full transition-all" style={{ width: `${pct}%` }} />
                   </div>
                 </div>
               )}
@@ -1552,38 +1792,47 @@ export default function TopicPage() {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 mb-6 border-b border-zinc-200 overflow-x-auto">
+        <div className="flex gap-1 mb-6 border-b border-bark-200 overflow-x-auto">
           <button
-            onClick={() => setTab("challenge")}
+            onClick={() => setTab("explore")}
             className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
-              tab === "challenge" ? "border-emerald-500 text-emerald-700" : "border-transparent text-zinc-500 hover:text-zinc-700"
+              tab === "explore" ? "border-saffron-500 text-saffron-700" : "border-transparent text-bark-500 hover:text-bark-800"
             }`}
           >
-            🧩 Challenge
+            ✨ Explore
           </button>
 
           <button
             onClick={() => setTab("tutor")}
             className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
-              tab === "tutor" ? "border-sky-500 text-sky-700" : "border-transparent text-zinc-500 hover:text-zinc-700"
+              tab === "tutor" ? "border-leaf-600 text-leaf-700" : "border-transparent text-bark-500 hover:text-bark-800"
             }`}
           >
             🧠 Learn with AI
           </button>
 
+          <button
+            onClick={() => setTab("problems")}
+            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
+              tab === "problems" ? "border-bark-600 text-bark-800" : "border-transparent text-bark-500 hover:text-bark-800"
+            }`}
+          >
+            💻 Problems
+          </button>
+
           <button onClick={() => setTab("videos")}
             className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
-              tab === "videos" ? "border-sky-500 text-sky-600" : "border-transparent text-zinc-500 hover:text-zinc-700"
+              tab === "videos" ? "border-bark-500 text-bark-700" : "border-transparent text-bark-500 hover:text-bark-800"
             }`}
           >
             Videos
-            {topic.videos.length > 0 && <span className="ml-1.5 text-xs text-zinc-400">({topic.videos.length})</span>}
+            {topic.videos.length > 0 && <span className="ml-1.5 text-xs text-bark-400">({topic.videos.length})</span>}
           </button>
-
         </div>
 
         {/* Tab content */}
-        {tab === "challenge" && <ChallengeTab slug={slug} onComplete={() => setTab("tutor")} />}
+        {tab === "explore"   && <TopicExplorer slug={slug} />}
+        {tab === "problems"  && <ProblemsTab topic={topic} />}
         {tab === "tutor" && <TutorTab slug={slug} subtopics={topic.subtopics} onSubtopicPassed={() => setRefreshKey(k => k + 1)} />}
 
         {tab === "videos" && (

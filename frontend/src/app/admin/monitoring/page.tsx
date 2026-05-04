@@ -87,7 +87,7 @@ export default function MonitoringPage() {
     <div className="min-h-screen text-zinc-800 bg-zinc-50">
       <nav className="border-b border-zinc-200 bg-white/80 backdrop-blur-sm sticky top-0 z-10 px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Link href="/demo" className="text-zinc-800 font-bold text-lg">Logos</Link>
+          <Link href="/demo" className="text-zinc-800 font-bold text-lg">Bodhix</Link>
           <span className="text-zinc-400">/</span>
           <Link href="/admin" className="text-zinc-500 text-sm hover:text-zinc-800">Admin</Link>
           <span className="text-zinc-400">/</span>

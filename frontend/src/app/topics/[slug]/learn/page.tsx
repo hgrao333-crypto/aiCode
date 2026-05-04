@@ -575,7 +575,7 @@ export default function LearnPage() {
       {/* Nav */}
       <nav className="border-b border-zinc-200 bg-white px-5 py-2.5 flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-4">
-          <Link href="/topics" className="text-zinc-800 font-bold">Logos</Link>
+          <Link href="/topics" className="text-zinc-800 font-bold">Bodhix</Link>
           <Link href={`/topics/${slug}`} className="text-zinc-600 text-sm hover:text-zinc-800 transition-colors">
             ← {topic.title}
           </Link>

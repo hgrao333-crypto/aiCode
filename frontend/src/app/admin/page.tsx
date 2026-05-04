@@ -22,7 +22,7 @@ export default function AdminDashboard() {
     <div className="min-h-screen text-zinc-800">
       <nav className="border-b border-zinc-200 bg-white/80 backdrop-blur-sm sticky top-0 z-10 px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Link href="/demo" className="text-zinc-800 font-bold text-lg">Logos</Link>
+          <Link href="/demo" className="text-zinc-800 font-bold text-lg">Bodhix</Link>
           <span className="text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full border border-amber-200 font-semibold">ADMIN</span>
         </div>
         <div className="flex items-center gap-3 text-sm">

@@ -23,11 +23,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem("logos_token");
+    const token = localStorage.getItem("bodhix_token");
     if (token) {
       getMe()
         .then(setUser)
-        .catch(() => localStorage.removeItem("logos_token"))
+        .catch(() => localStorage.removeItem("bodhix_token"))
         .finally(() => setLoading(false));
     } else {
       setLoading(false);
@@ -36,20 +36,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async (email: string, password: string) => {
     const { access_token } = await apiLogin(email, password);
-    localStorage.setItem("logos_token", access_token);
+    localStorage.setItem("bodhix_token", access_token);
     const me = await getMe();
     setUser(me);
   };
 
   const register = async (email: string, password: string) => {
     const { access_token } = await apiRegister(email, password);
-    localStorage.setItem("logos_token", access_token);
+    localStorage.setItem("bodhix_token", access_token);
     const me = await getMe();
     setUser(me);
   };
 
   const logout = () => {
-    localStorage.removeItem("logos_token");
+    localStorage.removeItem("bodhix_token");
     setUser(null);
   };
 

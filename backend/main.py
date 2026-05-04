@@ -21,7 +21,7 @@ try:
 finally:
     _seed_db.close()
 
-app = FastAPI(title="Logos API", version="0.1.0")
+app = FastAPI(title="Bodhix API", version="0.1.0")
 
 # CORS must be added before any other middleware / exception handlers
 app.add_middleware(
@@ -54,6 +54,8 @@ app.include_router(incidents.router)
 # Seed incidents if not already seeded
 from seed_incidents import seed as _seed_incidents
 _seed_incidents()
+from seed_dsa import seed as _seed_dsa
+_seed_dsa()
 
 # Serve pre-generated playcard audio files
 AUDIO_DIR = Path(__file__).parent / "audio"

@@ -142,7 +142,7 @@ export default function TopicsPage() {
     <div className="min-h-screen text-zinc-800">
       <nav className="border-b border-zinc-200 bg-white/80 backdrop-blur-sm sticky top-0 z-10 px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-6">
-          <Link href="/topics" className="text-zinc-800 font-bold text-lg">Logos</Link>
+          <Link href="/topics" className="text-zinc-800 font-bold text-lg">Bodhix</Link>
           <Link href="/topics" className="text-sky-600 text-sm font-medium">Curriculum</Link>
           <Link href="/problems" className="text-zinc-600 text-sm hover:text-zinc-800 transition-colors">Problems</Link>
           <Link href="/demo" className="text-emerald-600 text-sm hover:text-emerald-700 transition-colors">Demo Course</Link>
