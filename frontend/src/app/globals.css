@@ -1,20 +1,63 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
+@theme {
+  /* ── Bodhi leaf green ─────────────────────────────────────── */
+  --color-leaf-50:  #eef7f0;
+  --color-leaf-100: #d4ecda;
+  --color-leaf-200: #a8d8b4;
+  --color-leaf-300: #76be88;
+  --color-leaf-400: #4da066;
+  --color-leaf-500: #34834e;
+  --color-leaf-600: #276940;   /* primary interactive */
+  --color-leaf-700: #1e5030;
+  --color-leaf-800: #143620;
+  --color-leaf-900: #0a1e11;
+
+  /* ── Sacred saffron ──────────────────────────────────────── */
+  --color-saffron-50:  #fff8ec;
+  --color-saffron-100: #feeecf;
+  --color-saffron-200: #fcd99a;
+  --color-saffron-300: #f8bb5c;
+  --color-saffron-400: #f39b28;
+  --color-saffron-500: #da7b10;
+  --color-saffron-600: #bc600c;   /* accent / CTA */
+  --color-saffron-700: #954710;
+  --color-saffron-800: #70340e;
+  --color-saffron-900: #50230c;
+
+  /* ── Warm bark / parchment ───────────────────────────────── */
+  --color-bark-50:  #faf7f0;
+  --color-bark-100: #f0e9d8;
+  --color-bark-200: #e0cfb4;
+  --color-bark-300: #c8b090;
+  --color-bark-400: #ac9070;
+  --color-bark-500: #8c7054;
+  --color-bark-600: #6c5238;
+  --color-bark-700: #4c3826;
+  --color-bark-800: #2e2016;
+  --color-bark-900: #160e08;
+
+  --font-display: var(--font-display);
+}
+
 :root {
-  --background: #FDFCF8;   /* Warm off-white */
-  --foreground: #27272A;   /* Primary text — zinc-800 */
-  --foreground-secondary: #52525B; /* Secondary text — zinc-600 */
-  --foreground-muted: #A1A1AA; /* Muted text — zinc-400 */
-  --link: #0284C7;         /* Interactive text — sky-600 */
-  --accent: #06B6D4;       /* Accent (buttons/highlights) */
+  --background: #f7f4ed;
+  --foreground: #2e2016;
+  --foreground-secondary: #6c5238;
+  --foreground-muted: #8c7054;
+  --link: #276940;
+  --accent: #bc600c;
   --font-mono: var(--font-mono);
 }
 
-html,
-body {
+html, body {
   background: var(--background);
   color: var(--foreground);
+}
+
+.font-display {
+  font-family: var(--font-display), 'Playfair Display', Georgia, 'Times New Roman', serif;
 }
 
 /* XP toast animations */
@@ -34,18 +77,8 @@ body {
 .animate-bounce-up      { animation: bounceUp 0.5s cubic-bezier(.22,1,.36,1) forwards; }
 .animate-bounce-up-slow { animation: bounceUpSlow 0.6s 0.15s cubic-bezier(.22,1,.36,1) both; }
 
-/* Scrollbar styling */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: #D4D4D8;
-  border-radius: 3px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #0284C7;
-}
+/* Bodhi scrollbar */
+::-webkit-scrollbar       { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #c8b090; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #276940; }

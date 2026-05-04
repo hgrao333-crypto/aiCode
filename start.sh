@@ -41,11 +41,8 @@ echo "=== Starting frontend (port 3000) ==="
 cd "$SCRIPT_DIR/frontend"
 if [ -f .env.local ]; then set -a; source .env.local; set +a; fi
 
-# Rebuild if no production build exists
-if [ ! -d .next ] || [ ! -f .next/BUILD_ID ]; then
-  echo "No build found — running npm run build..."
-  npm run build
-fi
+echo "Building frontend..."
+npm run build
 
 nohup npm start > /tmp/logos-frontend.log 2>&1 &
 FRONTEND_PID=$!

@@ -31,7 +31,7 @@ export default function LoginPage() {
       <div className="w-full max-w-sm space-y-6">
         <div className="text-center">
           <Link href="/" className="text-2xl font-bold text-zinc-800">
-            Logos
+            Bodhix
           </Link>
           <p className="text-zinc-600 mt-1 text-sm">Sign in to continue</p>
         </div>

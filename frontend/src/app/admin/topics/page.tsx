@@ -11,7 +11,7 @@ function AdminNav({ email, logout }: { email?: string; logout: () => void }) {
   return (
     <nav className="border-b border-gray-800 px-6 py-3 flex items-center justify-between shrink-0">
       <div className="flex items-center gap-4">
-        <Link href="/topics" className="text-white font-bold text-lg">Logos</Link>
+        <Link href="/topics" className="text-white font-bold text-lg">Bodhix</Link>
         <span className="text-xs px-2 py-0.5 bg-amber-900 text-amber-300 rounded-full border border-amber-700 font-semibold">ADMIN</span>
         <Link href="/admin" className="text-gray-400 text-sm hover:text-white">Dashboard</Link>
         <Link href="/admin/topics" className="text-indigo-400 text-sm">Topics</Link>

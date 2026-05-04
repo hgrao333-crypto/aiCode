@@ -43,7 +43,7 @@ export default function ProblemsPage() {
       {/* Nav */}
       <nav className="border-b border-gray-800 px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-6">
-          <Link href="/topics" className="text-white font-bold text-lg">Logos</Link>
+          <Link href="/topics" className="text-white font-bold text-lg">Bodhix</Link>
           <Link href="/topics" className="text-gray-400 text-sm hover:text-white transition-colors">Curriculum</Link>
           <Link href="/problems" className="text-indigo-400 text-sm">Problems</Link>
         </div>

@@ -29,7 +29,7 @@ MAX_TURNS = 4  # follow-up questions before teaching triggers
 # System prompts
 # ---------------------------------------------------------------------------
 
-GATE_SYSTEM = """You are a friendly Socratic coding tutor on a platform called Logos.
+GATE_SYSTEM = """You are a friendly Socratic coding tutor on a platform called Bodhix.
 Your goal is to check whether the student genuinely understands the KEY CONCEPT behind their solution — not to trip them up or catch syntax mistakes.
 
 Good questions test conceptual understanding:
@@ -78,7 +78,7 @@ Important:
 - follow_up must be friendlier and simpler than the original question.
 Output raw JSON only."""
 
-PLAYCARD_SYSTEM = """You are a friendly coding tutor on Logos, helping a student understand a concept from a learning card.
+PLAYCARD_SYSTEM = """You are a friendly coding tutor on Bodhix, helping a student understand a concept from a learning card.
 
 Keep answers concise (under 200 words). Use the playcard content as the primary reference.
 When relevant, give short Python code examples. Be warm and encouraging.
@@ -403,6 +403,55 @@ Path:
 Output rule: ONE sentence of acknowledgment + ONE question.""",
 }
 
+# ---------------------------------------------------------------------------
+# Arrays & Hashing — topic-specific tutor systems
+# ---------------------------------------------------------------------------
+
+AH_TUTOR_SYSTEMS: dict[int, str] = {
+    1: """You are a Socratic AI tutor — Arrays & Hashing, stage 1: "Array Fundamentals".
+Goal: student discovers (1) why arr[i] access is O(1), (2) why insertion/deletion is O(n).
+
+Path:
+- "Here's arr=[10,20,30,40] at base address 1000, each element 4 bytes. How does Python find arr[2] instantly?"
+- They mention calculation → "What's the formula? Give me the exact address of arr[2]."
+- They say 1008 or base+i*4 → "Great. Now insert 99 at position 0. What has to happen to the existing elements?"
+- They say shift/move them → "That shift touches every element. What's the time complexity?"
+- They say O(n) → [ADVANCE]
+
+Output rule: ONE sentence of acknowledgment + ONE question. No walkthroughs, no lists.""",
+
+    2: """You are a Socratic AI tutor — Arrays & Hashing, stage 2: "Hash Maps & Sets".
+Goal: student understands (1) hash function maps key to index, (2) O(1) average lookup.
+
+Path:
+- "A Python dict stores 'apple': 5. How does Python find the value for 'apple' in O(1) — without scanning all keys?"
+- They mention hash function → "Walk me through it. What does hash('apple') actually produce?"
+- They say an integer / index → "Right. So lookup = compute index, go to that slot. What happens when two keys hash to the same index?"
+- They say collision → "Good. Collisions make worst case O(n). Why is the average still O(1)?"
+- They explain good hash distribution → [ADVANCE]
+
+Output rule: ONE sentence of acknowledgment + ONE question. Never explain the whole internals at once.""",
+
+    3: """You are a Socratic AI tutor — Arrays & Hashing, stage 3: "The Two-Sum Pattern".
+Goal: student discovers the complement-lookup pattern that turns O(n²) into O(n).
+
+Path:
+- "[2,7,11,15], target=9. What's the brute-force approach and its complexity?"
+- They say nested loops, O(n²) → "Right. For a one-pass solution, what would you need to save as you scan?"
+- They say previously seen numbers → "Exactly. For element 7, what do you look up to check if a valid partner exists?"
+- They say target - 7 = 2 → "And you look that up in the hash map. What data structure are you using and what does it store?"
+- They say {value: index} → [ADVANCE]
+
+Output rule: ONE sentence of acknowledgment + ONE question. Don't give the solution.""",
+}
+
+AH_STAGE_OPENERS = [
+    "Here's an array [10, 20, 30, 40] stored in memory starting at address 1000, each element taking 4 bytes. You want arr[2]. How does Python find it instantly — without scanning index 0 and 1 first?",
+    "A Python dict stores 'apple': 5. When you write d['apple'], Python returns 5 in O(1) — without looping through every key. How?",
+    "Array [2, 7, 11, 15], target = 9. Brute force: for every pair (i, j) check if they sum to 9 — that's O(n²). Can you do it in a single pass? What would you need to keep track of?",
+]
+
+
 STAGE_OPENERS = [
     "Let's start with the problem. You have items A(3kg,$5), B(2kg,$3), C(2kg,$3) and a 4kg bag. An easy approach: always take the item with the best value-per-kg. Greedy takes A (ratio 1.67), leaving 1kg — neither B nor C fits. Result: $5. Can you find a better selection?",
     "Greedy fails, so try brute force: check every take-or-skip combination. But in the recursion tree, sub-problems repeat — the call knapsack(items 1-2, capacity 3kg) might appear on dozens of branches. What's the simplest fix for recomputed answers?",
@@ -410,6 +459,20 @@ STAGE_OPENERS = [
     "Our 2D table uses O(n×W) space. But dp[i][w] only ever reads row i-1. Can we compress to a single 1D array dp[w] updated in place? What breaks if we update it left-to-right?",
     "You know 0/1 Knapsack. New problem: given integers [3,1,5,9,12], can any subset sum to exactly 14? Before writing code — does this feel structurally similar to anything you've seen?",
 ]
+
+
+# Registry: add new topics here as they're built
+TOPIC_TUTOR_SYSTEMS: dict[str, dict[int, str]] = {
+    "knapsack":            TUTOR_STAGE_SYSTEMS,
+    "dynamic-programming": TUTOR_STAGE_SYSTEMS,
+    "arrays-hashing":      AH_TUTOR_SYSTEMS,
+}
+
+TOPIC_STAGE_OPENERS: dict[str, list[str]] = {
+    "knapsack":            STAGE_OPENERS,
+    "dynamic-programming": STAGE_OPENERS,
+    "arrays-hashing":      AH_STAGE_OPENERS,
+}
 
 
 def _get_ai_config(key: str, default: str) -> str:
@@ -455,13 +518,24 @@ def tutor_respond(
     stage: int,
     message: str,
     history: list[dict] | None = None,
+    topic_slug: str = "knapsack",
 ) -> str:
-    """Socratic DP tutor using Gemini. Returns reply with optional [ADVANCE] token at end."""
+    """Socratic tutor using Gemini. Returns reply with optional [ADVANCE] token at end."""
     if history is None:
         history = []
 
-    system = _get_ai_config(f"tutor_system_{stage}", TUTOR_STAGE_SYSTEMS.get(stage, TUTOR_STAGE_SYSTEMS[1]))
-    opener = _get_ai_config(f"stage_opener_{stage}", STAGE_OPENERS[stage - 1])
+    stage_systems = TOPIC_TUTOR_SYSTEMS.get(topic_slug, TUTOR_STAGE_SYSTEMS)
+    stage_openers = TOPIC_STAGE_OPENERS.get(topic_slug, STAGE_OPENERS)
+    default_system = stage_systems.get(stage, stage_systems.get(1, TUTOR_STAGE_SYSTEMS[1]))
+    default_opener = stage_openers[stage - 1] if stage - 1 < len(stage_openers) else stage_openers[-1]
+
+    # DB overrides only apply to the default DP/knapsack topic — other topics use hardcoded content
+    if topic_slug in ("knapsack", "dynamic-programming"):
+        system = _get_ai_config(f"tutor_system_{stage}", default_system)
+        opener = _get_ai_config(f"stage_opener_{stage}", default_opener)
+    else:
+        system = default_system
+        opener = default_opener
     system += f'\n\nYour opening question to the student was:\n"{opener}"'
     system += _TUTOR_BREVITY_RULE
 

@@ -346,7 +346,7 @@ def tutor_chat(
     topic = db.query(models.Topic).filter(models.Topic.slug == slug).first()
     if not topic:
         raise HTTPException(status_code=404, detail="Topic not found")
-    raw = se.tutor_respond(stage=req.stage, message=req.message, history=req.history)
+    raw = se.tutor_respond(stage=req.stage, message=req.message, history=req.history, topic_slug=slug)
     advance = "[ADVANCE]" in raw
     clean = raw.replace("[ADVANCE]", "").strip()
     return TutorResponse(reply=clean, advance=advance)
