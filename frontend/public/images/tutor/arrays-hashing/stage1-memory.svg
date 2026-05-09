@@ -1,0 +1,38 @@
+<svg width="520" height="168" viewBox="0 0 520 168" xmlns="http://www.w3.org/2000/svg" font-family="'Courier New', Courier, monospace">
+  <!-- Background -->
+  <rect width="520" height="168" rx="10" fill="#fafafa" stroke="#e5e7eb" stroke-width="1.5"/>
+
+  <!-- Title -->
+  <text x="16" y="22" font-size="11" fill="#6b7280" font-weight="600" font-family="system-ui, sans-serif">arr = [10, 20, 30, 40]  —  base address 1000, 4 bytes per element</text>
+
+  <!-- Cell 0: addr 1000, value 10 -->
+  <rect x="14" y="32" width="108" height="52" rx="6" fill="#f9fafb" stroke="#d1d5db" stroke-width="1.5"/>
+  <text x="68" y="50" font-size="9.5" fill="#9ca3af" text-anchor="middle" font-family="system-ui, sans-serif">addr 1000</text>
+  <text x="68" y="68" font-size="18" fill="#374151" text-anchor="middle" font-weight="700">10</text>
+  <text x="68" y="95" font-size="9" fill="#9ca3af" text-anchor="middle" font-family="system-ui, sans-serif">arr[0]</text>
+
+  <!-- Cell 1: addr 1004, value 20 -->
+  <rect x="136" y="32" width="108" height="52" rx="6" fill="#f9fafb" stroke="#d1d5db" stroke-width="1.5"/>
+  <text x="190" y="50" font-size="9.5" fill="#9ca3af" text-anchor="middle" font-family="system-ui, sans-serif">addr 1004</text>
+  <text x="190" y="68" font-size="18" fill="#374151" text-anchor="middle" font-weight="700">20</text>
+  <text x="190" y="95" font-size="9" fill="#9ca3af" text-anchor="middle" font-family="system-ui, sans-serif">arr[1]</text>
+
+  <!-- Cell 2: addr 1008, value 30 (highlighted) -->
+  <rect x="258" y="32" width="108" height="52" rx="6" fill="#eff6ff" stroke="#3b82f6" stroke-width="2"/>
+  <text x="312" y="50" font-size="9.5" fill="#6b7280" text-anchor="middle" font-family="system-ui, sans-serif">addr 1008</text>
+  <text x="312" y="68" font-size="18" fill="#1d4ed8" text-anchor="middle" font-weight="700">30</text>
+  <text x="312" y="95" font-size="9.5" fill="#2563eb" text-anchor="middle" font-weight="600" font-family="system-ui, sans-serif">arr[2] ← you want this</text>
+
+  <!-- Cell 3: addr 1012, value 40 -->
+  <rect x="380" y="32" width="126" height="52" rx="6" fill="#f9fafb" stroke="#d1d5db" stroke-width="1.5"/>
+  <text x="443" y="50" font-size="9.5" fill="#9ca3af" text-anchor="middle" font-family="system-ui, sans-serif">addr 1012</text>
+  <text x="443" y="68" font-size="18" fill="#374151" text-anchor="middle" font-weight="700">40</text>
+  <text x="443" y="95" font-size="9" fill="#9ca3af" text-anchor="middle" font-family="system-ui, sans-serif">arr[3]</text>
+
+  <!-- Formula box -->
+  <rect x="14" y="112" width="492" height="44" rx="8" fill="#f0fdf4" stroke="#86efac" stroke-width="1.5"/>
+  <text x="26" y="130" font-size="12" fill="#166534" font-family="system-ui, sans-serif">Formula:</text>
+  <text x="95" y="130" font-size="12" fill="#374151" font-family="'Courier New', monospace">addr(arr[2]) = 1000 + 2 × 4 = 1008</text>
+  <text x="330" y="130" font-size="12" fill="#15803d" font-family="system-ui, sans-serif" font-weight="600"> — direct, no scan</text>
+  <text x="26" y="148" font-size="11" fill="#16a34a" font-family="system-ui, sans-serif">Any arr[i] = base + i × element_size  →  O(1) constant time</text>
+</svg>

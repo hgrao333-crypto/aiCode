@@ -336,6 +336,29 @@ class TutorResponse(BaseModel):
     advance: bool
 
 
+@router.get("/{slug}/tutor-images/{stage}")
+def get_tutor_images(
+    slug: str,
+    stage: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Return all pre-generated images for a topic+stage, ordered by image_key."""
+    rows = db.query(models.TutorImage).filter_by(topic_slug=slug, stage=stage).order_by(
+        models.TutorImage.image_key
+    ).all()
+    return [
+        {
+            "id": r.id,
+            "image_key": r.image_key,
+            "caption": r.caption,
+            "explanation": r.explanation,
+            "url": f"/static/tutor-images/{r.file_path}",
+        }
+        for r in rows
+    ]
+
+
 @router.post("/{slug}/tutor", response_model=TutorResponse)
 def tutor_chat(
     slug: str,

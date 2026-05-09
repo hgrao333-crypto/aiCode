@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { listTopics, getUserStats, TopicListItem, UserStats } from "@/lib/api";
+import { listTopics, TopicListItem } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 
 const COLOR_MAP: Record<string, { bg: string; border: string; text: string; icon: string }> = {
@@ -86,30 +86,11 @@ function TopicCard({ topic }: { topic: TopicListItem }) {
   return <Link href={`/topics/${topic.slug}`}>{card}</Link>;
 }
 
-function NavXP({ stats }: { stats: UserStats | null }) {
-  if (!stats) return null;
-  const pct = Math.round((stats.xp_in_level / stats.xp_to_next) * 100);
-  return (
-    <div className="flex items-center gap-2">
-      <div className="flex items-center gap-1.5 bg-white border border-zinc-200 rounded-full px-3 py-1 shadow-sm">
-        <span className="text-sky-600 text-xs font-bold">Lv.{stats.level}</span>
-        <div className="w-20 h-1.5 bg-zinc-200 rounded-full overflow-hidden">
-          <div className="h-full bg-sky-500 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
-        </div>
-        <span className="text-zinc-500 text-xs">{stats.xp} XP</span>
-      </div>
-      {stats.streak_days >= 2 && (
-        <span className="text-xs text-orange-500 font-semibold">🔥{stats.streak_days}</span>
-      )}
-    </div>
-  );
-}
 
 export default function TopicsPage() {
   const { user, loading: authLoading, logout } = useAuth();
   const router = useRouter();
   const [topics, setTopics] = useState<TopicListItem[]>([]);
-  const [stats, setStats] = useState<UserStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -119,8 +100,8 @@ export default function TopicsPage() {
 
   useEffect(() => {
     if (!user) return;
-    Promise.all([listTopics(), getUserStats()])
-      .then(([t, s]) => { setTopics(t); setStats(s); })
+    Promise.all([listTopics()])
+      .then(([t]) => { setTopics(t); })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, [user]);
@@ -148,7 +129,6 @@ export default function TopicsPage() {
           <Link href="/demo" className="text-emerald-600 text-sm hover:text-emerald-700 transition-colors">Demo Course</Link>
         </div>
         <div className="flex items-center gap-4 text-sm">
-          <NavXP stats={stats} />
           <span className="text-zinc-400 hidden sm:block">{user?.email}</span>
           <button onClick={logout} className="text-zinc-600 hover:text-zinc-800 transition-colors">Sign out</button>
         </div>

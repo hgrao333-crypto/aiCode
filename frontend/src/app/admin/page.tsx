@@ -45,6 +45,16 @@ export default function AdminDashboard() {
         </Link>
 
         <Link
+          href="/admin/tutor-images"
+          className="block p-6 rounded-2xl border border-zinc-200 bg-white hover:border-emerald-300 hover:shadow-sm transition-all"
+        >
+          <div className="text-xl font-semibold text-zinc-800 mb-1">🖼️ Tutor Images</div>
+          <p className="text-sm text-zinc-500 leading-relaxed">
+            Generate and manage pre-generated Gemini images shown in the AI tutor chat as students progress through each stage.
+          </p>
+        </Link>
+
+        <Link
           href="/admin/videos"
           className="block p-6 rounded-2xl border border-zinc-200 bg-white hover:border-sky-300 hover:shadow-sm transition-all"
         >

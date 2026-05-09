@@ -67,6 +67,11 @@ VIDEOS_DIR = Path(__file__).parent / "static" / "videos"
 VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/static/videos", StaticFiles(directory=str(VIDEOS_DIR)), name="videos")
 
+# Serve Gemini-generated tutor images
+TUTOR_IMAGES_DIR = Path(__file__).parent / "static" / "tutor-images"
+TUTOR_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/static/tutor-images", StaticFiles(directory=str(TUTOR_IMAGES_DIR)), name="tutor-images")
+
 
 @app.get("/health")
 def health():

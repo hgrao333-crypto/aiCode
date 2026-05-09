@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { listTopics, getUserStats, TopicListItem, UserStats } from "@/lib/api";
+import { listTopics, TopicListItem } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 
 function DSACourseCard({ topics }: { topics: TopicListItem[] }) {
@@ -75,19 +75,6 @@ function DSACourseCard({ topics }: { topics: TopicListItem[] }) {
   );
 }
 
-function NavXP({ stats }: { stats: UserStats | null }) {
-  if (!stats) return null;
-  const pct = Math.round((stats.xp_in_level / stats.xp_to_next) * 100);
-  return (
-    <div className="flex items-center gap-1.5 bg-bark-100 border border-bark-200 rounded-full px-3 py-1 shadow-sm">
-      <span className="text-leaf-700 text-xs font-bold">Lv.{stats.level}</span>
-      <div className="w-20 h-1.5 bg-bark-200 rounded-full overflow-hidden">
-        <div className="h-full bg-saffron-500 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
-      </div>
-      <span className="text-bark-500 text-xs">{stats.xp} XP</span>
-    </div>
-  );
-}
 
 function IncidentLabCard() {
   return (
@@ -267,7 +254,6 @@ export default function DemoPage() {
   const router = useRouter();
   const [demoTopics, setDemoTopics] = useState<TopicListItem[]>([]);
   const [mainTopics, setMainTopics] = useState<TopicListItem[]>([]);
-  const [stats, setStats] = useState<UserStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("demo");
 
@@ -277,11 +263,10 @@ export default function DemoPage() {
 
   useEffect(() => {
     if (!user) return;
-    Promise.allSettled([listTopics("demo"), listTopics("main"), getUserStats()])
-      .then(([demo, main, s]) => {
+    Promise.allSettled([listTopics("demo"), listTopics("main")])
+      .then(([demo, main]) => {
         if (demo.status === "fulfilled") setDemoTopics(demo.value);
         if (main.status === "fulfilled") setMainTopics(main.value);
-        if (s.status === "fulfilled") setStats(s.value);
       })
       .finally(() => setLoading(false));
   }, [user]);
@@ -308,7 +293,6 @@ export default function DemoPage() {
           </Link>
         </div>
         <div className="flex items-center gap-4 text-sm">
-          <NavXP stats={stats} />
           <span className="text-bark-400 hidden sm:block">{user?.email}</span>
           <button onClick={logout} className="text-bark-600 hover:text-bark-900 transition-colors">Sign out</button>
         </div>

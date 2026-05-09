@@ -1,0 +1,49 @@
+<svg width="520" height="188" viewBox="0 0 520 188" xmlns="http://www.w3.org/2000/svg" font-family="'Courier New', Courier, monospace">
+  <!-- Background -->
+  <rect width="520" height="188" rx="10" fill="#fafafa" stroke="#e5e7eb" stroke-width="1.5"/>
+
+  <!-- Title -->
+  <text x="16" y="22" font-size="11" fill="#6b7280" font-weight="600" font-family="system-ui, sans-serif">nums = [2, 7, 11, 15],  target = 9  —  one-pass hash map solution</text>
+
+  <!-- Array visualization -->
+  <rect x="14" y="30" width="52" height="36" rx="5" fill="#f9fafb" stroke="#d1d5db" stroke-width="1.5"/>
+  <text x="40" y="42" font-size="9" fill="#9ca3af" text-anchor="middle" font-family="system-ui, sans-serif">nums[0]</text>
+  <text x="40" y="58" font-size="16" fill="#374151" text-anchor="middle" font-weight="700">2</text>
+
+  <rect x="70" y="30" width="52" height="36" rx="5" fill="#ecfdf5" stroke="#16a34a" stroke-width="2"/>
+  <text x="96" y="42" font-size="9" fill="#16a34a" text-anchor="middle" font-family="system-ui, sans-serif">nums[1]</text>
+  <text x="96" y="58" font-size="16" fill="#15803d" text-anchor="middle" font-weight="700">7</text>
+
+  <rect x="126" y="30" width="52" height="36" rx="5" fill="#f9fafb" stroke="#d1d5db" stroke-width="1.5"/>
+  <text x="152" y="42" font-size="9" fill="#9ca3af" text-anchor="middle" font-family="system-ui, sans-serif">nums[2]</text>
+  <text x="152" y="58" font-size="16" fill="#374151" text-anchor="middle" font-weight="700">11</text>
+
+  <rect x="182" y="30" width="52" height="36" rx="5" fill="#f9fafb" stroke="#d1d5db" stroke-width="1.5"/>
+  <text x="208" y="42" font-size="9" fill="#9ca3af" text-anchor="middle" font-family="system-ui, sans-serif">nums[3]</text>
+  <text x="208" y="58" font-size="16" fill="#374151" text-anchor="middle" font-weight="700">15</text>
+
+  <!-- target badge -->
+  <rect x="258" y="34" width="90" height="28" rx="6" fill="#fef3c7" stroke="#d97706" stroke-width="1.5"/>
+  <text x="303" y="52" font-size="12" fill="#92400e" text-anchor="middle" font-weight="600">target = 9</text>
+
+  <!-- seen dict label -->
+  <text x="368" y="42" font-size="10.5" fill="#6b7280" font-family="system-ui, sans-serif">seen = {}</text>
+  <text x="368" y="58" font-size="10" fill="#9ca3af" font-family="system-ui, sans-serif">builds as we scan →</text>
+
+  <!-- Step rows -->
+  <!-- Step 0: i=0, n=2, comp=7, not found, store -->
+  <rect x="14" y="78" width="492" height="32" rx="6" fill="#f9fafb" stroke="#e5e7eb" stroke-width="1"/>
+  <text x="26" y="99" font-size="11" fill="#6b7280" font-family="system-ui, sans-serif">i=0,  n=<tspan font-weight="700" fill="#374151">2</tspan>,  comp = 9−2 = <tspan font-weight="700" fill="#374151">7</tspan></text>
+  <text x="230" y="99" font-size="11" fill="#9ca3af" font-family="system-ui, sans-serif">7 not in seen  →  store</text>
+  <text x="370" y="99" font-size="11" fill="#6366f1" font-weight="600" font-family="'Courier New', monospace">seen = {2: 0}</text>
+
+  <!-- Step 1: i=1, n=7, comp=2, FOUND -->
+  <rect x="14" y="116" width="492" height="32" rx="6" fill="#ecfdf5" stroke="#16a34a" stroke-width="1.5"/>
+  <text x="26" y="137" font-size="11" fill="#15803d" font-family="system-ui, sans-serif">i=1,  n=<tspan font-weight="700">7</tspan>,  comp = 9−7 = <tspan font-weight="700">2</tspan></text>
+  <text x="230" y="137" font-size="11" fill="#15803d" font-weight="600" font-family="system-ui, sans-serif">✓ 2 IS in seen!</text>
+  <text x="370" y="137" font-size="11" fill="#166534" font-weight="700" font-family="system-ui, sans-serif">→ return [0, 1]</text>
+
+  <!-- Note -->
+  <rect x="14" y="158" width="492" height="24" rx="6" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1"/>
+  <text x="260" y="174" font-size="11" fill="#1d4ed8" text-anchor="middle" font-family="system-ui, sans-serif">Single pass.  For each num: check complement → found or store.  O(n) time, O(n) space.</text>
+</svg>

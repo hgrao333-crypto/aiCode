@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy import func, distinct
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from typing import Any
+from typing import Any, Optional
 
 from database import get_db
 import models
@@ -574,3 +574,133 @@ def monitoring(db: Session = Depends(get_db), _=Depends(require_admin)):
         "badges_earned_total": badges_earned_total,
         "video_completions_total": video_completions_total,
     }
+
+
+# ── Tutor images ───────────────────────────────────────────────────────────────
+
+TUTOR_IMAGES_STATIC = Path(__file__).parent.parent / "static" / "tutor-images"
+API_BASE = "http://localhost:8000"   # overridden at runtime via NEXT_PUBLIC_API_URL
+
+
+class GenerateImageIn(BaseModel):
+    topic_slug: str
+    stage: int
+    image_key: str
+    prompt: Optional[str] = None
+    caption: Optional[str] = None
+    explanation: Optional[str] = None
+
+
+def _image_url(file_path: str) -> str:
+    return f"/static/tutor-images/{file_path}"
+
+
+@router.get("/tutor-images")
+def list_tutor_images(db: Session = Depends(get_db), _=Depends(require_admin)):
+    rows = db.query(models.TutorImage).order_by(
+        models.TutorImage.topic_slug, models.TutorImage.stage, models.TutorImage.image_key
+    ).all()
+    return [
+        {
+            "id": r.id,
+            "topic_slug": r.topic_slug,
+            "stage": r.stage,
+            "image_key": r.image_key,
+            "caption": r.caption,
+            "explanation": r.explanation,
+            "url": _image_url(r.file_path),
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in rows
+    ]
+
+
+@router.post("/tutor-images/generate", status_code=201)
+def generate_tutor_image_endpoint(
+    data: GenerateImageIn,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
+    """Trigger Gemini image generation for a specific topic/stage/key and store in DB."""
+    import socratic_engine as se
+
+    try:
+        out_path, _ = se.generate_tutor_image(
+            data.topic_slug, data.stage, data.image_key, data.prompt
+        )
+    except Exception as e:
+        raise HTTPException(502, detail=f"Image generation failed: {e}")
+
+    # file_path stored relative to TUTOR_IMAGES_STATIC root
+    rel = out_path.relative_to(TUTOR_IMAGES_STATIC)
+    rel_str = str(rel).replace("\\", "/")
+
+    existing = db.query(models.TutorImage).filter_by(
+        topic_slug=data.topic_slug, stage=data.stage, image_key=data.image_key
+    ).first()
+
+    if existing:
+        existing.file_path = rel_str
+        existing.caption = data.caption or existing.caption
+        existing.explanation = data.explanation or existing.explanation
+        existing.gemini_prompt = data.prompt
+        existing.updated_at = datetime.utcnow()
+        db.commit()
+        row = existing
+    else:
+        row = models.TutorImage(
+            topic_slug=data.topic_slug,
+            stage=data.stage,
+            image_key=data.image_key,
+            caption=data.caption,
+            explanation=data.explanation,
+            file_path=rel_str,
+            gemini_prompt=data.prompt,
+        )
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+
+    return {
+        "id": row.id,
+        "url": _image_url(row.file_path),
+        "topic_slug": row.topic_slug,
+        "stage": row.stage,
+        "image_key": row.image_key,
+    }
+
+
+@router.put("/tutor-images/{image_id}")
+def update_tutor_image(
+    image_id: int,
+    data: dict,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
+    """Update caption or explanation for an existing tutor image."""
+    row = db.query(models.TutorImage).filter_by(id=image_id).first()
+    if not row:
+        raise HTTPException(404, detail="Image not found")
+    if "caption" in data:
+        row.caption = data["caption"]
+    if "explanation" in data:
+        row.explanation = data["explanation"]
+    db.commit()
+    return {"ok": True}
+
+
+@router.delete("/tutor-images/{image_id}")
+def delete_tutor_image(
+    image_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
+    row = db.query(models.TutorImage).filter_by(id=image_id).first()
+    if not row:
+        raise HTTPException(404, detail="Image not found")
+    img_path = TUTOR_IMAGES_STATIC / row.file_path
+    if img_path.exists():
+        img_path.unlink()
+    db.delete(row)
+    db.commit()
+    return {"ok": True}

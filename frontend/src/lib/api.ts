@@ -245,6 +245,18 @@ export async function markSubtopicPassed(subtopicId: number): Promise<void> {
   return request(`/api/topics/subtopics/${subtopicId}/mark-passed`, { method: "POST" });
 }
 
+export interface TutorImageItem {
+  id: number;
+  image_key: string;
+  caption: string | null;
+  explanation: string | null;
+  url: string;
+}
+
+export async function getTutorImages(slug: string, stage: number): Promise<TutorImageItem[]> {
+  return request(`/api/topics/${slug}/tutor-images/${stage}`);
+}
+
 export async function chatWithPlaycard(
   playcardId: number,
   message: string,
@@ -472,6 +484,14 @@ export const adminApi = {
   },
   listYoutubeVideos: () => request<Array<{ id: number; title: string; youtube_id: string; topic_id: number; order_index: number }>>("/api/admin/videos"),
   getMonitoring: () => request<AdminMonitoring>("/api/admin/monitoring"),
+
+  // Tutor images
+  listTutorImages: () => request<Array<{ id: number; topic_slug: string; stage: number; image_key: string; caption: string | null; explanation: string | null; url: string; created_at: string | null }>>("/api/admin/tutor-images"),
+  generateTutorImage: (data: { topic_slug: string; stage: number; image_key: string; prompt?: string; caption?: string; explanation?: string }) =>
+    request<{ id: number; url: string; topic_slug: string; stage: number; image_key: string }>("/api/admin/tutor-images/generate", { method: "POST", body: JSON.stringify(data) }),
+  updateTutorImage: (id: number, data: { caption?: string; explanation?: string }) =>
+    request("/api/admin/tutor-images/" + id, { method: "PUT", body: JSON.stringify(data) }),
+  deleteTutorImage: (id: number) => request("/api/admin/tutor-images/" + id, { method: "DELETE" }),
 };
 
 export interface AdminMonitoring {

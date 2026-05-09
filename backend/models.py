@@ -299,6 +299,24 @@ class TutorProgress(Base):
     __table_args__ = (UniqueConstraint("user_id", "topic_slug"),)
 
 
+class TutorImage(Base):
+    """Pre-generated educational images for the AI tutor, stored by topic + stage."""
+    __tablename__ = "tutor_images"
+
+    id = Column(Integer, primary_key=True, index=True)
+    topic_slug = Column(String, nullable=False, index=True)
+    stage = Column(Integer, nullable=False)
+    image_key = Column(String, nullable=False)   # e.g. "memory-layout", "hash-table"
+    caption = Column(Text, nullable=True)         # shown below the image in chat
+    explanation = Column(Text, nullable=True)     # AI teaching text shown with the image
+    file_path = Column(String, nullable=False)    # relative path under static/tutor-images/
+    gemini_prompt = Column(Text, nullable=True)   # prompt used to generate
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (UniqueConstraint("topic_slug", "stage", "image_key"),)
+
+
 class LearnerProfile(Base):
     """Rich JSON profile per user for AI context injection."""
     __tablename__ = "learner_profiles"

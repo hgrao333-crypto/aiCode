@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
-import { getTopic, getUserStats, tutorChat, TopicDetail, SubTopicDetail, UserStats, getTutorProgress, saveTutorProgress, completeSubtopic, completeFinal, markSubtopicPassed } from "@/lib/api";
+import { getTopic, tutorChat, TopicDetail, SubTopicDetail, getTutorProgress, saveTutorProgress, completeSubtopic, completeFinal, markSubtopicPassed, getTutorImages, TutorImageItem } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { TopicExplorer } from "./explorer";
 
@@ -399,15 +399,36 @@ type AssessQ = MCQQuestion | DebugQuestion | TraceQuestion;
 type Blank = { label: string; answer: string };
 type CodingProblem = { title: string; description: string; code: string; blanks: Blank[]; hint: string };
 
+interface TeachingCard {
+  text: string;
+  dbImageKey?: string;   // key to look up in DB (admin pre-generates images with this key)
+  imageUrl?: string;     // static fallback if no DB image exists
+  imageCaption?: string;
+}
+
 interface SubtopicCfg {
   stage: number; title: string; icon: string;
-  concepts: string[]; opener: string; assessment: AssessQ[];
+  concepts: string[];
+  teachingCards?: TeachingCard[];
+  opener: string; assessment: AssessQ[];
 }
 
 const SUBTOPICS: SubtopicCfg[] = [
   {
     stage: 1, title: "The Thief's Choice", icon: "🎒",
     concepts: ["Problem framing", "Why greedy fails", "2ⁿ decision tree"],
+    teachingCards: [
+      {
+        text: "**Greedy always picks the locally best item — but local best can block a better global combination.**\n\nWith items A(3kg,$5), B(2kg,$3), C(2kg,$3) and a 4kg bag, greedy picks A first (ratio 5/3 ≈ 1.67). That uses 3kg, leaving only 1kg — neither B nor C fits. Total: **$5**.\n\nBut B+C together = 4kg, $6. Greedy missed it because taking A locked out this combination.\n\nThe only way to guarantee the best pick: check **every possible subset** — that's 2ⁿ options.",
+        imageUrl: "/images/card_greedy_fails.png",
+        imageCaption: "Greedy commits to one path and misses the optimal combination.",
+      },
+      {
+        text: "**Every item has exactly two choices: take it or skip it. That gives a binary decision tree.**\n\nAt each node you branch: take the item (and reduce remaining capacity) or skip it. With n items you get 2ⁿ leaves — one for each possible subset.\n\nFor 3 items: 8 combinations. For 30 items: over a billion. Brute force explodes quickly.",
+        imageUrl: "/images/card_decision_tree.png",
+        imageCaption: "Each item forks the tree — take or skip. n items → 2ⁿ leaves.",
+      },
+    ],
     opener: "Let's start with the problem. Items A(3kg,$5), B(2kg,$3), C(2kg,$3), capacity 4kg. Easy approach: take the best value-per-kg first. Greedy takes A (ratio 1.67), leaving 1kg — neither B nor C fits. Result: $5. Can you find a better selection?",
     assessment: [
       {
@@ -441,6 +462,13 @@ const SUBTOPICS: SubtopicCfg[] = [
   {
     stage: 2, title: "Overlapping Subproblems", icon: "🔁",
     concepts: ["Recursive structure", "Repeated sub-problems", "Memoization"],
+    teachingCards: [
+      {
+        text: "**The brute-force recursion recomputes the same sub-problem many times — that's the overlapping subproblems property.**\n\nA sub-problem is defined by two things: *which item* you're deciding on, and *how much capacity* remains. The call `knapsack(items 1-2, capacity 3kg)` can appear on dozens of branches of the tree — each time solving from scratch.\n\nThe fix: **memoization**. Store the answer in a dict `memo[(i, w)]` the first time you compute it. Every subsequent call with the same `(i, w)` just returns the cached value.\n\nWith n items and capacity W, there are at most **n × W** unique `(i, w)` pairs. Time drops from O(2ⁿ) to **O(n × W)**.",
+        imageUrl: "/images/card_memo_table.png",
+        imageCaption: "A cache (memo) stores each solved sub-problem so it's never recomputed.",
+      },
+    ],
     opener: "Greedy fails, so try brute force: check every take-or-skip combination. But in the recursion tree, sub-problems repeat — knapsack(items 1-2, capacity 3kg) might appear on dozens of branches. What's the simplest fix for recomputed answers?",
     assessment: [
       {
@@ -467,6 +495,13 @@ const SUBTOPICS: SubtopicCfg[] = [
   {
     stage: 3, title: "Building the Table", icon: "📊",
     concepts: ["Bottom-up DP", "2D table dp[i][w]", "Recurrence: skip vs take"],
+    teachingCards: [
+      {
+        text: "**Bottom-up DP flips the recursion: instead of solving top-down and caching, we fill a 2D table from the simplest sub-problems up.**\n\nThe table has `dp[i][w]` = best value using the first `i` items with capacity `w`. Row 0 (no items) is all zeros — the base case.\n\nFor each subsequent row i, and each capacity w, we choose the better of two options:\n- **Skip item i**: `dp[i][w] = dp[i-1][w]`\n- **Take item i** (if it fits): `dp[i][w] = dp[i-1][w - wᵢ] + vᵢ`\n\nWe look at row i-1 when taking — that's the key: we use the best we could do *without* item i as the foundation.",
+        imageUrl: "/images/subtopic_building-the-table.png",
+        imageCaption: "Build dp[i][w] row by row — each cell is the better of skip or take.",
+      },
+    ],
     opener: "Memoization works top-down. Now go bottom-up: build a table dp[i][w] = best value using first i items at capacity w. Start with the base case — the whole first row dp[0][w] = ? (no items, any capacity.)",
     assessment: [
       {
@@ -499,6 +534,13 @@ for i in range(1, n+1):
   {
     stage: 4, title: "One Row is Enough", icon: "➡️",
     concepts: ["1D DP array", "Right-to-left iteration", "O(W) space"],
+    teachingCards: [
+      {
+        text: "**The 2D table uses O(n × W) space, but each row only reads from the row directly above it. We can compress to a single array.**\n\nWhen filling `dp[w]` for item i, we only need `dp[w]` and `dp[w - wᵢ]` from *before this item was processed*. If we update in place, we have to be careful not to overwrite values we still need.\n\n**Left-to-right is wrong**: updating `dp[2]` before computing `dp[4]` means `dp[4-2]=dp[2]` already reflects item i — the item gets counted twice (unbounded knapsack behavior).\n\n**Right-to-left is correct**: when we compute `dp[w]`, `dp[w - wᵢ]` hasn't been updated yet — it still holds the 'before this item' value, so each item is counted at most once.",
+        imageUrl: "/images/card_1d_trick.png",
+        imageCaption: "Right-to-left ensures dp[w−wᵢ] still holds the pre-item value when we read it.",
+      },
+    ],
     opener: "Our 2D table uses O(n×W) space — but dp[i][w] only reads row i-1. Can we compress to a single 1D array dp[w] updated in place? What breaks if you update left-to-right?",
     assessment: [
       {
@@ -525,6 +567,13 @@ for i in range(1, n+1):
   {
     stage: 5, title: "Variations", icon: "🔀",
     concepts: ["Subset Sum mapping", "Unbounded Knapsack", "Pattern recognition"],
+    teachingCards: [
+      {
+        text: "**Once you know 0/1 Knapsack, many other problems are just a re-labelling.**\n\n**Subset Sum**: Can some subset of `[3,1,5,9,12]` sum to 14? Map it: weight = value = the number, capacity = 14. If `dp[n][14] = 14`, a valid subset exists. Same DP, different labels.\n\n**Unbounded Knapsack**: Items can be reused unlimited times. The only change: iterate the inner loop **left-to-right** instead of right-to-left. Left-to-right lets `dp[w - wᵢ]` already reflect the current item, meaning it can be added again.\n\n| Problem | Loop direction |\n|---|---|\n| 0/1 Knapsack | Right → Left |\n| Unbounded Knapsack | Left → Right |\n| Subset Sum | Right → Left |",
+        imageUrl: "/images/subtopic_knapsack-variations.png",
+        imageCaption: "One template, three problems — the only difference is loop direction and how you map the problem.",
+      },
+    ],
     opener: "You know 0/1 Knapsack cold. New problem: given integers [3,1,5,9,12], can any subset sum to exactly 14? Before writing code — does this feel structurally similar to anything you've seen?",
     assessment: [
       {
@@ -686,6 +735,14 @@ const AH_SUBTOPICS: SubtopicCfg[] = [
   {
     stage: 1, title: "Memory & Indexing", icon: "🧱",
     concepts: ["Contiguous memory", "Base + offset formula", "O(1) random access"],
+    teachingCards: [
+      {
+        text: "**Arrays store elements in consecutive (contiguous) memory addresses.**\n\nWhen Python creates `arr = [10, 20, 30, 40]`, the runtime allocates a block of memory and places each element back-to-back. If the array starts at address 1000 and each element takes 4 bytes:\n- `arr[0]` → address 1000\n- `arr[1]` → address 1004\n- `arr[i]` → address **`1000 + i × 4`**\n\nThis formula means Python can jump directly to any element with one multiplication and one addition — **O(1) regardless of array size**. A linked list, by contrast, must follow pointers from node to node — O(n).",
+        dbImageKey: "memory-layout",
+        imageUrl: "/images/tutor/arrays-hashing/stage1-memory.svg",
+        imageCaption: "Every arr[i] sits at a calculable address — direct access, no scanning.",
+      },
+    ],
     opener: "Here's an array [10, 20, 30, 40] stored in memory starting at address 1000, each element taking 4 bytes. You want arr[2]. How does Python find it instantly — without scanning index 0 and 1 first?",
     assessment: [
       {
@@ -716,6 +773,14 @@ const AH_SUBTOPICS: SubtopicCfg[] = [
   {
     stage: 2, title: "How Hashing Works", icon: "🗝️",
     concepts: ["Hash function", "Buckets", "O(1) average lookup"],
+    teachingCards: [
+      {
+        text: "**A hash map converts keys to array indices using a hash function — enabling O(1) average lookups.**\n\nWhen you write `d['apple'] = 5`, Python computes `hash('apple')` (an integer), then takes `hash % num_buckets` to get a bucket index, and stores `5` at that position in a backing array.\n\nLooking up `d['apple']` repeats the same math — compute the hash, find the bucket, read the value. **No loop through all keys**.\n\nCollisions (two keys hashing to the same bucket) are handled by chaining. As long as the hash function distributes keys evenly, each bucket has ~1 entry on average — O(1) get and set.",
+        dbImageKey: "hash-buckets",
+        imageUrl: "/images/tutor/arrays-hashing/stage2-hashmap.svg",
+        imageCaption: "hash(key) → bucket index → value.  One arithmetic step, not a search.",
+      },
+    ],
     opener: "A Python dict stores 'apple': 5. When you write d['apple'], Python returns 5 in O(1) — without looping through every key. How?",
     assessment: [
       {
@@ -742,6 +807,14 @@ const AH_SUBTOPICS: SubtopicCfg[] = [
   {
     stage: 3, title: "The Complement Trick", icon: "🎯",
     concepts: ["Single-pass hash map", "Complement lookup", "O(n) time, O(n) space"],
+    teachingCards: [
+      {
+        text: "**The complement trick replaces a nested loop with a single pass + O(1) hash map lookup.**\n\nBrute force Two Sum: for every pair (i, j) check `nums[i] + nums[j] == target` — that's O(n²).\n\nThe insight: if `nums[i] + nums[j] == target`, then `nums[j] = target - nums[i]`. For each element `n`, we need its **complement** `target - n`.\n\nInstead of scanning ahead for the complement, use a hash map `seen = {value: index}`. As you walk the array:\n1. Check if `target - n` is already in `seen`.\n2. If yes → you found the pair. Return both indices.\n3. If no → store `seen[n] = i` and continue.\n\nOne pass, O(n) time, O(n) space.",
+        dbImageKey: "two-sum-trace",
+        imageUrl: "/images/tutor/arrays-hashing/stage3-twosum.svg",
+        imageCaption: "Scan once: check complement in seen dict, or store current value and move on.",
+      },
+    ],
     opener: "Array [2, 7, 11, 15], target = 9. Brute force: for every pair (i, j) check if they sum to 9 — that's O(n²). Can you do it in a single pass? What would you need to keep track of?",
     assessment: [
       {
@@ -1347,9 +1420,57 @@ const ChatMarkdown = {
     return <code className="bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded text-[12.5px] font-mono border border-indigo-100">{children}</code>;
   },
   pre: ({ children }: MarkdownProps) => <>{children}</>,
+  table: ({ children }: MarkdownProps) => <table className="my-2 text-sm border-collapse w-full">{children}</table>,
+  th: ({ children }: MarkdownProps) => <th className="border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-left text-xs font-semibold text-zinc-600">{children}</th>,
+  td: ({ children }: MarkdownProps) => <td className="border border-zinc-200 px-3 py-1.5 text-[13px] text-zinc-700">{children}</td>,
+};
+
+const TeachingMarkdown = {
+  ...ChatMarkdown,
+  p: ({ children }: MarkdownProps) => <p className="text-[14px] text-emerald-900 leading-[1.75] mb-2 last:mb-0">{children}</p>,
+  strong: ({ children }: MarkdownProps) => <strong className="font-semibold text-emerald-950">{children}</strong>,
+  em: ({ children }: MarkdownProps) => <em className="italic text-emerald-700">{children}</em>,
+  ul: ({ children }: MarkdownProps) => <ul className="my-2 space-y-1 list-none pl-0">{children}</ul>,
+  li: ({ children }: MarkdownProps) => (
+    <li className="flex gap-2 text-[14px] text-emerald-900 leading-[1.75]">
+      <span className="mt-[7px] w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0" /><span>{children}</span>
+    </li>
+  ),
+  code: ({ className, children }: MarkdownProps) => {
+    const isBlock = Boolean(className);
+    if (isBlock) return (
+      <div className="my-2 rounded-lg overflow-hidden border border-emerald-700/30">
+        <pre className="bg-emerald-950 px-4 py-3 overflow-x-auto m-0">
+          <code className="text-[12px] font-mono leading-relaxed text-emerald-200">{children}</code>
+        </pre>
+      </div>
+    );
+    return <code className="bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded text-[12px] font-mono border border-emerald-200">{children}</code>;
+  },
+  table: ({ children }: MarkdownProps) => <table className="my-2 text-sm border-collapse w-full">{children}</table>,
+  th: ({ children }: MarkdownProps) => <th className="border border-emerald-200 bg-emerald-100 px-3 py-1.5 text-left text-xs font-semibold text-emerald-700">{children}</th>,
+  td: ({ children }: MarkdownProps) => <td className="border border-emerald-200 px-3 py-1.5 text-[13px] text-emerald-800">{children}</td>,
 };
 
 // ── TutorTab ──────────────────────────────────────────────────────────────────
+
+type ChatMsg = { role: string; content: string; msgType?: "teaching"; imageUrl?: string; imageCaption?: string };
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
+function buildInitialMessages(cfg: SubtopicCfg, dbImages: TutorImageItem[] = []): ChatMsg[] {
+  const dbByKey = Object.fromEntries(dbImages.map(img => [img.image_key, img]));
+  const msgs: ChatMsg[] = [];
+  for (const card of cfg.teachingCards ?? []) {
+    // Prefer DB image over static fallback when admin has generated one
+    const dbImg = card.dbImageKey ? dbByKey[card.dbImageKey] : undefined;
+    const imageUrl = dbImg ? `${API_BASE}${dbImg.url}` : card.imageUrl;
+    const imageCaption = dbImg?.caption ?? card.imageCaption;
+    msgs.push({ role: "assistant", content: card.text, msgType: "teaching", imageUrl, imageCaption });
+  }
+  msgs.push({ role: "assistant", content: cfg.opener });
+  return msgs;
+}
 
 function TutorTab({ slug, subtopics, onSubtopicPassed }: { slug: string; subtopics: SubTopicDetail[]; onSubtopicPassed: () => void }) {
   const cfg = TOPIC_TUTOR_CONFIG[slug] ?? TOPIC_TUTOR_CONFIG["knapsack"];
@@ -1357,9 +1478,10 @@ function TutorTab({ slug, subtopics, onSubtopicPassed }: { slug: string; subtopi
   const [subtopicIdx, setSubtopicIdx] = useState(0);
   const [phase, setPhase] = useState<"learning" | "assessment" | "coding" | "final" | "done">("learning");
   const [completedSubtopics, setCompletedSubtopics] = useState<number[]>([]);
-  const [messages, setMessages] = useState<Array<{ role: string; content: string }>>([
-    { role: "assistant", content: cfg.subtopics[0].opener },
-  ]);
+  const [messages, setMessages] = useState<ChatMsg[]>(
+    () => buildInitialMessages(cfg.subtopics[0])
+  );
+  const [stageImages, setStageImages] = useState<TutorImageItem[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [advancing, setAdvancing] = useState(false);
@@ -1372,14 +1494,28 @@ function TutorTab({ slug, subtopics, onSubtopicPassed }: { slug: string; subtopi
 
   useEffect(() => {
     const topicCfg = TOPIC_TUTOR_CONFIG[slug] ?? TOPIC_TUTOR_CONFIG["knapsack"];
-    getTutorProgress(slug).then(p => {
+    Promise.all([
+      getTutorProgress(slug),
+      getTutorImages(slug, topicCfg.subtopics[0].stage),
+    ]).then(([p, imgs]) => {
       const idx = Math.min(p.subtopic_idx, topicCfg.subtopics.length - 1);
       setSubtopicIdx(idx);
       setCompletedSubtopics(p.completed_subtopics || []);
       const validPhase = ["learning","assessment","coding","final","done"].includes(p.phase)
         ? p.phase as typeof phase : "learning";
       setPhase(validPhase);
-      setMessages([{ role: "assistant", content: topicCfg.subtopics[idx].opener }]);
+      // If progress put us on a different stage, fetch images for that stage too
+      const stageImages = idx === 0 ? imgs : [];
+      setStageImages(stageImages);
+      setMessages(buildInitialMessages(topicCfg.subtopics[idx], stageImages));
+      if (idx > 0) {
+        getTutorImages(slug, topicCfg.subtopics[idx].stage)
+          .then(stageImgs => {
+            setStageImages(stageImgs);
+            setMessages(buildInitialMessages(topicCfg.subtopics[idx], stageImgs));
+          })
+          .catch(() => {});
+      }
     }).catch(() => {}).finally(() => setProgressLoaded(true));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug]);
@@ -1397,7 +1533,10 @@ function TutorTab({ slug, subtopics, onSubtopicPassed }: { slug: string; subtopi
     setSubtopicIdx(idx);
     setPhase("learning");
     setContextOpen(false);
-    setMessages([{ role: "assistant", content: cfg.subtopics[idx].opener }]);
+    setMessages(buildInitialMessages(cfg.subtopics[idx], stageImages));
+    getTutorImages(slug, cfg.subtopics[idx].stage)
+      .then(imgs => { setStageImages(imgs); setMessages(buildInitialMessages(cfg.subtopics[idx], imgs)); })
+      .catch(() => {});
   }
 
   function handleAssessmentComplete() { setPhase("coding"); }
@@ -1413,7 +1552,10 @@ function TutorTab({ slug, subtopics, onSubtopicPassed }: { slug: string; subtopi
     if (next < cfg.subtopics.length) {
       setSubtopicIdx(next);
       setPhase("learning");
-      setMessages([{ role: "assistant", content: cfg.subtopics[next].opener }]);
+      setMessages(buildInitialMessages(cfg.subtopics[next], []));
+      getTutorImages(slug, cfg.subtopics[next].stage)
+        .then(imgs => { setStageImages(imgs); setMessages(buildInitialMessages(cfg.subtopics[next], imgs)); })
+        .catch(() => {});
     } else {
       setPhase("final");
     }
@@ -1424,7 +1566,7 @@ function TutorTab({ slug, subtopics, onSubtopicPassed }: { slug: string; subtopi
     const userMsg = input.trim();
     setInput("");
     inputRef.current?.focus();
-    const history = messages;
+    const history = messages.filter(m => m.msgType !== "teaching");
     setMessages(prev => [...prev, { role: "user", content: userMsg }]);
     setLoading(true);
     try {
@@ -1524,9 +1666,32 @@ function TutorTab({ slug, subtopics, onSubtopicPassed }: { slug: string; subtopi
       {/* Chat window */}
       <div className="rounded-2xl border border-zinc-200 overflow-hidden shadow-sm bg-white">
         {/* Message list */}
-        <div className="h-[520px] overflow-y-auto px-5 py-6 space-y-6 bg-[#fafafa]">
+        <div className="h-[520px] overflow-y-auto px-5 py-6 space-y-5 bg-[#fafafa]">
           {messages.map((msg, i) =>
-            msg.role === "assistant" ? (
+            msg.msgType === "teaching" ? (
+              // ── Teaching card ──────────────────────────────────────────────
+              <div key={i} className="flex gap-3.5 items-start">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white text-sm flex-shrink-0 shadow-md mt-0.5 select-none">
+                  📖
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[10px] font-bold text-emerald-600 tracking-[0.12em] uppercase mb-2 select-none">Concept</div>
+                  <div className="bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl rounded-tl-sm px-4 py-3.5 shadow-sm">
+                    <ReactMarkdown components={TeachingMarkdown as Parameters<typeof ReactMarkdown>[0]["components"]}>{msg.content}</ReactMarkdown>
+                    {msg.imageUrl && (
+                      <div className="mt-4 rounded-xl overflow-hidden border border-emerald-200 bg-white">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={msg.imageUrl} alt={msg.imageCaption ?? ""} className="w-full h-auto block max-h-96 object-contain" />
+                        {msg.imageCaption && (
+                          <p className="px-3 py-2 text-[11px] text-emerald-600 border-t border-emerald-100 italic">{msg.imageCaption}</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : msg.role === "assistant" ? (
+              // ── Regular AI message ─────────────────────────────────────────
               <div key={i} className="flex gap-3.5 items-start">
                 <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0 shadow-md mt-0.5 select-none">
                   ✦
@@ -1537,6 +1702,7 @@ function TutorTab({ slug, subtopics, onSubtopicPassed }: { slug: string; subtopi
                 </div>
               </div>
             ) : (
+              // ── User message ───────────────────────────────────────────────
               <div key={i} className="flex justify-end items-end gap-2">
                 <div className="max-w-[70%] bg-indigo-600 text-white rounded-2xl rounded-br-sm px-4 py-2.5 text-[15px] leading-[1.65] shadow-sm">
                   {msg.content}
@@ -1683,24 +1849,6 @@ function ProblemsTab({ topic }: { topic: TopicDetail }) {
   );
 }
 
-// ─── NavXP ────────────────────────────────────────────────────────────────────
-
-function NavXP({ stats }: { stats: UserStats | null }) {
-  if (!stats) return null;
-  const pct = Math.round((stats.xp_in_level / stats.xp_to_next) * 100);
-  return (
-    <div className="flex items-center gap-2">
-      <div className="flex items-center gap-1.5 bg-bark-100 border border-bark-200 rounded-full px-3 py-1 shadow-sm">
-        <span className="text-leaf-700 text-xs font-bold">Lv.{stats.level}</span>
-        <div className="w-20 h-1.5 bg-bark-200 rounded-full overflow-hidden">
-          <div className="h-full bg-saffron-500 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
-        </div>
-        <span className="text-bark-500 text-xs">{stats.xp} XP</span>
-      </div>
-      {stats.streak_days >= 2 && <span className="text-xs text-orange-500 font-semibold">🔥{stats.streak_days}</span>}
-    </div>
-  );
-}
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
@@ -1711,7 +1859,6 @@ export default function TopicPage() {
   const slug = params.slug as string;
 
   const [topic, setTopic] = useState<TopicDetail | null>(null);
-  const [userStats, setUserStats] = useState<UserStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [tab, setTab] = useState<Tab>("explore");
@@ -1723,8 +1870,8 @@ export default function TopicPage() {
 
   useEffect(() => {
     if (!user || !slug) return;
-    Promise.all([getTopic(slug), getUserStats()])
-      .then(([t, s]) => { setTopic(t); setUserStats(s); })
+    Promise.all([getTopic(slug)])
+      .then(([t]) => { setTopic(t); })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, [user, slug, refreshKey]);
@@ -1754,7 +1901,6 @@ export default function TopicPage() {
           <Link href="/demo" className="text-bark-500 text-sm hover:text-bark-800 transition-colors">← Back</Link>
         </div>
         <div className="flex items-center gap-4 text-sm">
-          <NavXP stats={userStats} />
           <span className="text-bark-400 hidden sm:block">{user?.email}</span>
           <button onClick={logout} className="text-bark-500 hover:text-bark-900 transition-colors">Sign out</button>
         </div>

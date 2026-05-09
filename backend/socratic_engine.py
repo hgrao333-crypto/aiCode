@@ -2,10 +2,12 @@
 Socratic engine — AI calls for the platform.
 
 Anthropic (Claude): gate questions, answer evaluation, teaching (coding problem flow)
-Gemini Flash (free): playcard chat, exercise grading
+Gemini Flash (free): playcard chat, exercise grading, tutor image generation
 """
+import base64
 import json
 import time
+from pathlib import Path
 from anthropic import Anthropic
 from google import genai
 from google.genai import types as gtypes  # noqa: F401 — used in generate_content calls
@@ -491,13 +493,22 @@ def _get_ai_config(key: str, default: str) -> str:
 
 
 def seed_ai_config(db) -> None:
-    """Populate ai_config with hardcoded defaults on first run."""
+    """Populate ai_config with hardcoded defaults. Uses slug-scoped keys for all topics."""
     from models import AiConfig as _AiConfig
-    defaults: dict[str, str] = {
-        "gemini_model": GEMINI_FLASH,
-        **{f"tutor_system_{i}": TUTOR_STAGE_SYSTEMS[i] for i in range(1, 6)},
-        **{f"stage_opener_{i}": STAGE_OPENERS[i - 1] for i in range(1, 6)},
-    }
+    defaults: dict[str, str] = {"gemini_model": GEMINI_FLASH}
+
+    # Seed every registered topic with slug-scoped keys
+    seeded_slugs: set[str] = set()
+    for slug, stage_systems in TOPIC_TUTOR_SYSTEMS.items():
+        if slug in seeded_slugs:
+            continue
+        seeded_slugs.add(slug)
+        openers = TOPIC_STAGE_OPENERS.get(slug, STAGE_OPENERS)
+        for stage, system in stage_systems.items():
+            opener = openers[stage - 1] if stage - 1 < len(openers) else openers[-1]
+            defaults[f"{slug}_system_{stage}"] = system
+            defaults[f"{slug}_opener_{stage}"] = opener
+
     for key, value in defaults.items():
         if not db.query(_AiConfig).filter_by(key=key).first():
             db.add(_AiConfig(key=key, value=value))
@@ -506,11 +517,14 @@ def seed_ai_config(db) -> None:
 
 _TUTOR_BREVITY_RULE = """
 OUTPUT FORMAT (non-negotiable):
-- Hard limit: 120 words total (not counting [ADVANCE]).
+- Hard limit: 150 words total (not counting [ADVANCE]).
+- After a CORRECT answer: 1 sentence confirming it's right, then 1-2 sentences explaining WHY that insight matters, then ONE follow-up question.
+- After a PARTIAL or WRONG answer: 1-2 sentences clarifying the concept clearly (teach the gap), then ONE guiding question.
 - You MAY use up to 3 short bullet points to clarify a concept or show a comparison — keep each bullet under 15 words.
 - You MAY include ONE short inline code snippet (single line) if it makes the idea clearer.
 - NEVER write a full step-by-step array trace (e.g. w=1, w=2, w=3... for every index). Summarise in one sentence instead.
 - Always end with exactly ONE question. Nothing after the question mark except [ADVANCE] if earned.
+- Do NOT re-explain what the student just said back to them — move the learning forward.
 """
 
 
@@ -529,13 +543,9 @@ def tutor_respond(
     default_system = stage_systems.get(stage, stage_systems.get(1, TUTOR_STAGE_SYSTEMS[1]))
     default_opener = stage_openers[stage - 1] if stage - 1 < len(stage_openers) else stage_openers[-1]
 
-    # DB overrides only apply to the default DP/knapsack topic — other topics use hardcoded content
-    if topic_slug in ("knapsack", "dynamic-programming"):
-        system = _get_ai_config(f"tutor_system_{stage}", default_system)
-        opener = _get_ai_config(f"stage_opener_{stage}", default_opener)
-    else:
-        system = default_system
-        opener = default_opener
+    # All topics use slug-scoped DB keys; falls back to hardcoded default if not seeded yet
+    system = _get_ai_config(f"{topic_slug}_system_{stage}", default_system)
+    opener = _get_ai_config(f"{topic_slug}_opener_{stage}", default_opener)
     system += f'\n\nYour opening question to the student was:\n"{opener}"'
     system += _TUTOR_BREVITY_RULE
 
@@ -585,3 +595,90 @@ def chat_about_playcard(
         ),
     )
     return response.text.strip()
+
+
+# ---------------------------------------------------------------------------
+# Tutor image generation (Gemini imagen / flash image gen)
+# ---------------------------------------------------------------------------
+
+GEMINI_IMAGE_MODEL = "gemini-2.5-flash-image"
+GEMINI_IMAGE_MODEL_FALLBACK = "gemini-3.1-flash-image-preview"
+
+# Storage root: backend/static/tutor-images/{slug}/{stage}/{key}.png
+TUTOR_IMAGES_DIR = Path(__file__).parent / "static" / "tutor-images"
+
+
+def _default_image_prompt(topic_slug: str, stage: int, image_key: str) -> str:
+    """Build a sensible prompt when none is supplied."""
+    return (
+        f"Create a large, bold educational diagram for a computer science course. "
+        f"Topic: {topic_slug.replace('-', ' ')}, stage {stage}, concept: {image_key.replace('-', ' ')}. "
+        f"IMPORTANT: Fill the ENTIRE canvas with the diagram — extend elements edge-to-edge with only 20px margins. "
+        f"Use very large text (minimum 18pt), thick lines, and oversized boxes so every label is easily readable. "
+        f"White background, soft colors (greens, blues, grays). No decorative elements, no title header, no empty space."
+    )
+
+
+def generate_tutor_image(
+    topic_slug: str,
+    stage: int,
+    image_key: str,
+    prompt: str | None = None,
+) -> tuple[Path, str]:
+    """
+    Generate an educational image via Gemini image-generation model and save it to disk.
+    Returns (file_path, base64_data_url).
+    Raises ValueError if no image is returned.
+    """
+    final_prompt = prompt or _default_image_prompt(topic_slug, stage, image_key)
+
+    # Must use the dedicated image-generation model — _gemini_generate uses GEMINI_FLASH which
+    # only does text and will error with "response_modalities IMAGE not supported".
+    last_error: Exception | None = None
+    response = None
+    for model in [GEMINI_IMAGE_MODEL, GEMINI_IMAGE_MODEL_FALLBACK]:
+        try:
+            response = gemini.models.generate_content(
+                model=model,
+                contents=final_prompt,
+                config=gtypes.GenerateContentConfig(
+                    response_modalities=["TEXT", "IMAGE"],
+                ),
+            )
+            break
+        except Exception as e:
+            last_error = e
+            continue
+
+    if response is None:
+        raise ValueError(f"Image generation failed on all models: {last_error}") from last_error
+
+    image_bytes: bytes | None = None
+    for candidate in (response.candidates or []):
+        for part in (candidate.content.parts if candidate.content else []):
+            inline = getattr(part, "inline_data", None)
+            if inline and getattr(inline, "data", None):
+                raw = inline.data
+                # SDK returns bytes directly; guard against base64 strings just in case
+                image_bytes = raw if isinstance(raw, bytes) else base64.b64decode(raw)
+                break
+        if image_bytes:
+            break
+
+    if not image_bytes:
+        # Surface any text in the response to help debug content-policy blocks
+        text_parts = []
+        for cand in (response.candidates or []):
+            for p in (cand.content.parts if cand.content else []):
+                if hasattr(p, "text") and p.text:
+                    text_parts.append(p.text)
+        detail = " | ".join(text_parts) if text_parts else "no candidates returned"
+        raise ValueError(f"Gemini returned no image for {topic_slug}/{stage}/{image_key}: {detail}")
+
+    out_dir = TUTOR_IMAGES_DIR / topic_slug / str(stage)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"{image_key}.png"
+    out_path.write_bytes(image_bytes)
+
+    data_url = "data:image/png;base64," + base64.b64encode(image_bytes).decode()
+    return out_path, data_url
