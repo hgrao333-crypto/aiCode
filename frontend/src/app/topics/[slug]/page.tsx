@@ -1110,42 +1110,60 @@ function AssessmentTab({
   onSubtopicPassed: () => void;
 }) {
   const cfg = getCourseConfig(slug) ?? getCourseConfig("knapsack")!;
-  const [selected, setSelected] = useState<number | null>(null);
+  const [selected, setSelected] = useState<number | "final" | null>(null);
   const [localPassed, setLocalPassed] = useState<Set<number>>(
     () => new Set(subtopics.map((st, i) => (st.gate_passed ? i : -1)).filter(i => i >= 0))
   );
 
   function handleComplete(idx: number) {
     const dbId = subtopics[idx]?.id;
-    if (dbId) {
-      markSubtopicPassed(dbId).then(() => {
-        setLocalPassed(p => new Set([...p, idx]));
-        onSubtopicPassed();
-      }).catch(() => {});
-    } else {
+    const markPassed = () => {
       setLocalPassed(p => new Set([...p, idx]));
-    }
-    setSelected(null);
-  }
-
-  if (selected !== null) {
-    const subtopicCfg = cfg.subtopics[selected];
-    return (
-      <div className="space-y-4">
-        <button
-          onClick={() => setSelected(null)}
-          className="text-sm text-zinc-500 hover:text-zinc-800 transition-colors flex items-center gap-1"
-        >
-          ← All subtopics
-        </button>
-        <AssessmentPhase cfg={subtopicCfg} onComplete={() => handleComplete(selected)} />
-      </div>
-    );
+      onSubtopicPassed();
+      setSelected(null);
+    };
+    if (dbId) markSubtopicPassed(dbId).then(markPassed).catch(markPassed);
+    else markPassed();
   }
 
   const total = cfg.subtopics.length;
   const passedCount = localPassed.size;
+  const allPassed = passedCount === total && total > 0;
 
+  // ── Playground view ──
+  if (selected === "final") {
+    return (
+      <div className="space-y-5">
+        <button onClick={() => setSelected(null)}
+          className="text-sm text-zinc-500 hover:text-zinc-800 transition-colors">
+          ← Back
+        </button>
+        <CodingPlayground
+          problem={cfg.finalProblem}
+          isHard={true}
+          onComplete={() => { completeFinal().catch(() => {}); setSelected(null); }}
+        />
+      </div>
+    );
+  }
+
+  if (typeof selected === "number") {
+    return (
+      <div className="space-y-5">
+        <button onClick={() => setSelected(null)}
+          className="text-sm text-zinc-500 hover:text-zinc-800 transition-colors">
+          ← Back
+        </button>
+        <CodingPlayground
+          problem={cfg.codingProblems[selected]}
+          isHard={false}
+          onComplete={() => handleComplete(selected)}
+        />
+      </div>
+    );
+  }
+
+  // ── List view ──
   return (
     <div className="max-w-2xl mx-auto space-y-4">
       <div className="flex items-center justify-between">
@@ -1153,15 +1171,10 @@ function AssessmentTab({
         <span className="text-sm text-zinc-500">{passedCount}/{total} passed</span>
       </div>
 
-      {passedCount === total && total > 0 && (
-        <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-medium">
-          🏆 All subtopics passed — topic complete!
-        </div>
-      )}
-
       <div className="space-y-3">
         {cfg.subtopics.map((s, i) => {
           const isPassed = localPassed.has(i);
+          const problem = cfg.codingProblems[i];
           return (
             <div key={i} className={`flex items-center gap-4 p-4 rounded-2xl border transition-colors ${
               isPassed ? "bg-emerald-50 border-emerald-200" : "bg-white border-zinc-200"
@@ -1169,7 +1182,7 @@ function AssessmentTab({
               <span className="text-2xl">{s.icon}</span>
               <div className="flex-1 min-w-0">
                 <div className="font-semibold text-zinc-800 text-sm">{s.title}</div>
-                <div className="text-xs text-zinc-400 mt-0.5">{s.assessment.length} questions</div>
+                <div className="text-xs text-zinc-400 mt-0.5 truncate">{problem?.title}</div>
               </div>
               {isPassed && (
                 <span className="text-xs font-semibold text-emerald-700 bg-emerald-100 px-2.5 py-1 rounded-full shrink-0">
@@ -1180,7 +1193,7 @@ function AssessmentTab({
                 onClick={() => setSelected(i)}
                 className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors shrink-0 ${
                   isPassed
-                    ? "text-zinc-400 hover:text-zinc-600 underline text-xs px-0 py-0 bg-transparent"
+                    ? "text-zinc-400 hover:text-zinc-600 text-xs underline"
                     : "bg-sky-600 hover:bg-sky-500 text-white"
                 }`}
               >
@@ -1189,6 +1202,28 @@ function AssessmentTab({
             </div>
           );
         })}
+
+        {/* Final challenge — unlocks once all subtopics are passed */}
+        <div className={`flex items-center gap-4 p-4 rounded-2xl border transition-colors ${
+          allPassed ? "bg-white border-amber-200" : "bg-zinc-50 border-zinc-200 opacity-50"
+        }`}>
+          <span className="text-2xl">🏆</span>
+          <div className="flex-1 min-w-0">
+            <div className="font-semibold text-zinc-800 text-sm">{cfg.finalProblem.title}</div>
+            <div className="text-xs text-zinc-400 mt-0.5">Final challenge — complete all subtopics first</div>
+          </div>
+          <button
+            onClick={() => allPassed && setSelected("final")}
+            disabled={!allPassed}
+            className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors shrink-0 ${
+              allPassed
+                ? "bg-amber-500 hover:bg-amber-400 text-white"
+                : "bg-zinc-200 text-zinc-400 cursor-not-allowed"
+            }`}
+          >
+            {allPassed ? "Start →" : "Locked"}
+          </button>
+        </div>
       </div>
     </div>
   );
