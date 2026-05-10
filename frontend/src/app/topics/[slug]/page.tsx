@@ -1100,12 +1100,6 @@ function YouTubeEmbed({ youtubeId, title }: { youtubeId: string; title: string }
   );
 }
 
-const DIFF_META = {
-  easy:   { label: "Easy",   dot: "🟢", btnCls: "bg-emerald-600 hover:bg-emerald-500 text-white" },
-  medium: { label: "Medium", dot: "🟡", btnCls: "bg-amber-500 hover:bg-amber-400 text-white" },
-  hard:   { label: "Hard",   dot: "🔴", btnCls: "bg-red-600 hover:bg-red-500 text-white" },
-} as const;
-
 function AssessmentTab({
   slug,
   subtopics,
@@ -1115,7 +1109,7 @@ function AssessmentTab({
   subtopics: SubTopicDetail[];
   onSubtopicPassed: () => void;
 }) {
-  // Auto-mark a subtopic as passed when every one of its problems is gate_passed
+  // Auto-mark subtopics passed when all their problems are solved
   useEffect(() => {
     subtopics.forEach(st => {
       if (!st.gate_passed && st.problems.length > 0 && st.problems.every(p => p.gate_passed)) {
@@ -1125,25 +1119,12 @@ function AssessmentTab({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subtopics]);
 
-  const allProblems = subtopics.flatMap(st => st.problems);
-  const byDiff = {
-    easy:   allProblems.filter(p => p.difficulty === "easy"),
-    medium: allProblems.filter(p => p.difficulty === "medium"),
-    hard:   allProblems.filter(p => p.difficulty === "hard"),
-  };
+  // Pick the first 2 problems across all subtopics (sorted by order_index within each subtopic)
+  const problems = subtopics.flatMap(st => st.problems).slice(0, 2);
+  const passedCount = problems.filter(p => p.gate_passed).length;
+  const allDone = problems.length > 0 && problems.every(p => p.gate_passed);
 
-  const easyDone   = byDiff.easy.length === 0   || byDiff.easy.every(p => p.gate_passed);
-  const mediumDone = byDiff.medium.length === 0  || byDiff.medium.every(p => p.gate_passed);
-  const allDone    = easyDone && mediumDone && (byDiff.hard.length === 0 || byDiff.hard.every(p => p.gate_passed));
-  const passedCount = allProblems.filter(p => p.gate_passed).length;
-
-  function isLocked(diff: "easy" | "medium" | "hard") {
-    if (diff === "easy") return false;
-    if (diff === "medium") return !easyDone;
-    return !mediumDone;
-  }
-
-  if (allProblems.length === 0) {
+  if (problems.length === 0) {
     return (
       <div className="text-center py-16 text-zinc-500 text-sm">
         No assessment problems available for this topic yet.
@@ -1152,68 +1133,50 @@ function AssessmentTab({
   }
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
+    <div className="max-w-xl mx-auto space-y-5">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-base font-bold text-zinc-800">Assessment</h2>
-          <p className="text-xs text-zinc-400 mt-0.5">Write and run real code — solve each level to pass the topic</p>
+          <h2 className="text-base font-bold text-zinc-800">Final Assessment</h2>
+          <p className="text-xs text-zinc-400 mt-0.5">Solve both problems to pass this topic</p>
         </div>
-        <span className="text-sm text-zinc-500">{passedCount}/{allProblems.length} passed</span>
+        <span className="text-sm text-zinc-500">{passedCount}/{problems.length} passed</span>
       </div>
 
       {allDone && (
         <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 font-semibold text-sm">
-          🏆 All levels complete — topic mastered!
+          🏆 Both problems solved — topic complete!
         </div>
       )}
 
-      {(["easy", "medium", "hard"] as const).map(diff => {
-        const problems = byDiff[diff];
-        if (problems.length === 0) return null;
-        const locked = isLocked(diff);
-        const meta = DIFF_META[diff];
-        const levelDone = problems.every(p => p.gate_passed);
-        const prereqLabel = diff === "medium" ? "Easy" : "Medium";
-
-        return (
-          <div key={diff} className={locked ? "opacity-50 pointer-events-none select-none" : ""}>
-            <div className="flex items-center gap-2 mb-3">
-              <span className="text-base">{meta.dot}</span>
-              <span className="font-bold text-zinc-800">{meta.label}</span>
-              {locked && <span className="text-xs text-zinc-400 font-normal">— finish {prereqLabel} first</span>}
-              {!locked && levelDone && <span className="text-xs text-emerald-600 font-semibold ml-1">All passed ✓</span>}
+      <div className="space-y-3">
+        {problems.map((p, i) => (
+          <div key={p.id} className={`flex items-center gap-4 p-4 rounded-2xl border transition-colors ${
+            p.gate_passed ? "bg-emerald-50 border-emerald-200" : "bg-white border-zinc-200"
+          }`}>
+            <div className="w-7 h-7 rounded-full bg-zinc-100 border border-zinc-200 flex items-center justify-center text-xs font-bold text-zinc-500 shrink-0">
+              {i + 1}
             </div>
-
-            <div className="space-y-2">
-              {problems.map((p) => (
-                <div key={p.id} className={`flex items-center gap-4 p-4 rounded-2xl border transition-colors ${
-                  p.gate_passed ? "bg-emerald-50 border-emerald-200" : "bg-white border-zinc-200"
-                }`}>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-semibold text-zinc-800 text-sm">{p.title}</div>
-                    <div className="text-xs text-zinc-400 mt-0.5 capitalize">{p.difficulty}</div>
-                  </div>
-                  {p.gate_passed && (
-                    <span className="text-xs font-semibold text-emerald-700 bg-emerald-100 px-2.5 py-1 rounded-full shrink-0">
-                      ✓ Passed
-                    </span>
-                  )}
-                  <Link
-                    href={`/problems/${p.slug}?from=/topics/${slug}`}
-                    className={`px-4 py-2 rounded-xl text-sm font-semibold shrink-0 transition-colors ${
-                      p.gate_passed
-                        ? "text-zinc-400 hover:text-zinc-600 text-xs underline"
-                        : meta.btnCls
-                    }`}
-                  >
-                    {p.gate_passed ? "Retry" : "Solve →"}
-                  </Link>
-                </div>
-              ))}
+            <div className="flex-1 min-w-0">
+              <div className="font-semibold text-zinc-800 text-sm">{p.title}</div>
             </div>
+            {p.gate_passed && (
+              <span className="text-xs font-semibold text-emerald-700 bg-emerald-100 px-2.5 py-1 rounded-full shrink-0">
+                ✓ Passed
+              </span>
+            )}
+            <Link
+              href={`/problems/${p.slug}?from=/topics/${slug}`}
+              className={`px-4 py-2 rounded-xl text-sm font-semibold shrink-0 transition-colors ${
+                p.gate_passed
+                  ? "text-zinc-400 hover:text-zinc-600 text-xs underline"
+                  : "bg-zinc-800 hover:bg-zinc-700 text-white"
+              }`}
+            >
+              {p.gate_passed ? "Retry" : "Solve →"}
+            </Link>
           </div>
-        );
-      })}
+        ))}
+      </div>
     </div>
   );
 }
