@@ -2,6 +2,7 @@ import type { CodingProblem } from "../types";
 
 export const CODING_PROBLEMS: CodingProblem[] = [
   {
+    difficulty: "easy",
     title: "Brute Force Recursion",
     description: "Complete the recursive knapsack. When you take item i, the remaining capacity shrinks by its weight. Return the better of skip vs take.",
     code: `def knapsack(items, capacity, i=0):
@@ -20,6 +21,7 @@ export const CODING_PROBLEMS: CodingProblem[] = [
     hint: "Taking item i costs w capacity. The recursive call for 'take' must reflect that reduced capacity. The function should return whichever path gives more total value.",
   },
   {
+    difficulty: "easy",
     title: "Add Memoization",
     description: "The brute force recomputes identical sub-problems. Add a cache dict. The key must uniquely identify a sub-problem — what two values define it?",
     code: `memo = {}
@@ -40,6 +42,7 @@ def knapsack(items, capacity, i=0):
     hint: "A sub-problem is fully defined by two numbers: which item we're deciding on now, and how much capacity remains.",
   },
   {
+    difficulty: "medium",
     title: "Fill the 2D Recurrence",
     description: "Bottom-up DP: dp[i][w] = best value using first i items at capacity w. Fill the 'take item i' branch of the recurrence.",
     code: `def knapsack(items, W):
@@ -59,6 +62,7 @@ def knapsack(items, capacity, i=0):
     hint: "Taking item i uses w capacity. What's the best we could do with (cap-w) capacity, using only the items before i (row i-1)?",
   },
   {
+    difficulty: "medium",
     title: "1D DP — Right to Left",
     description: "Compress the 2D table to one array. Fill the iteration start and the dp lookup for the 'take' case.",
     code: `def knapsack(items, W):
@@ -74,6 +78,7 @@ def knapsack(items, capacity, i=0):
     hint: "range(start, stop, step=-1) goes from start down to stop+1. Start at max capacity W. Taking the item means looking back at dp[cap-w] — the value before this item occupied w space.",
   },
   {
+    difficulty: "hard",
     title: "Subset Sum via DP",
     description: "Can [3,1,5,9,12] be split into two equal subsets? Use a boolean DP: dp[cap] = True if some subset sums to cap.",
     code: `def can_partition(nums):
@@ -96,6 +101,7 @@ def knapsack(items, capacity, i=0):
 ];
 
 export const FINAL_PROBLEM: CodingProblem = {
+  difficulty: "hard",
   title: "Knapsack with Item Tracking",
   description: "Hard: find the maximum value AND recover the list of items chosen. Fill the forward DP recurrence, then complete the backtracking pass.",
   code: `def knapsack_with_items(items, W):

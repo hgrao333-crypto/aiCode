@@ -1100,6 +1100,12 @@ function YouTubeEmbed({ youtubeId, title }: { youtubeId: string; title: string }
   );
 }
 
+const DIFF_META = {
+  easy:   { label: "Easy",   dot: "🟢", btnCls: "bg-emerald-600 hover:bg-emerald-500 text-white" },
+  medium: { label: "Medium", dot: "🟡", btnCls: "bg-amber-500 hover:bg-amber-400 text-white" },
+  hard:   { label: "Hard",   dot: "🔴", btnCls: "bg-red-600 hover:bg-red-500 text-white" },
+} as const;
+
 function AssessmentTab({
   slug,
   subtopics,
@@ -1110,54 +1116,60 @@ function AssessmentTab({
   onSubtopicPassed: () => void;
 }) {
   const cfg = getCourseConfig(slug) ?? getCourseConfig("knapsack")!;
-  const [selected, setSelected] = useState<number | "final" | null>(null);
-  const [localPassed, setLocalPassed] = useState<Set<number>>(
-    () => new Set(subtopics.map((st, i) => (st.gate_passed ? i : -1)).filter(i => i >= 0))
-  );
 
-  function handleComplete(idx: number) {
-    const dbId = subtopics[idx]?.id;
-    const markPassed = () => {
-      setLocalPassed(p => new Set([...p, idx]));
-      onSubtopicPassed();
-      setSelected(null);
-    };
-    if (dbId) markSubtopicPassed(dbId).then(markPassed).catch(markPassed);
-    else markPassed();
+  // Flat list: all coding problems + final (always hard)
+  type Prob = CodingProblem & { difficulty: "easy" | "medium" | "hard" };
+  const allProblems: Prob[] = [
+    ...cfg.codingProblems.map(p => ({ ...p, difficulty: (p.difficulty ?? "easy") as "easy" | "medium" | "hard" })),
+    { ...cfg.finalProblem, difficulty: "hard" as const },
+  ];
+  const byDiff = {
+    easy:   allProblems.filter(p => p.difficulty === "easy"),
+    medium: allProblems.filter(p => p.difficulty === "medium"),
+    hard:   allProblems.filter(p => p.difficulty === "hard"),
+  };
+
+  // Pass state persisted in localStorage
+  const storageKey = `assessment_v1_${slug}`;
+  const [passed, setPassed] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem(storageKey) ?? "[]")); }
+    catch { return new Set(); }
+  });
+  const [active, setActive] = useState<Prob | null>(null);
+
+  const easyDone   = byDiff.easy.length === 0   || byDiff.easy.every(p => passed.has(p.title));
+  const mediumDone = byDiff.medium.length === 0  || byDiff.medium.every(p => passed.has(p.title));
+  const allDone    = easyDone && mediumDone && (byDiff.hard.length === 0 || byDiff.hard.every(p => passed.has(p.title)));
+
+  function isLocked(diff: "easy" | "medium" | "hard") {
+    if (diff === "easy") return false;
+    if (diff === "medium") return !easyDone;
+    return !mediumDone;
   }
 
-  const total = cfg.subtopics.length;
-  const passedCount = localPassed.size;
-  const allPassed = passedCount === total && total > 0;
+  function handleComplete(p: Prob) {
+    const next = new Set([...passed, p.title]);
+    setPassed(next);
+    localStorage.setItem(storageKey, JSON.stringify([...next]));
+    // When ALL problems done → mark all subtopics passed in DB
+    if (allProblems.every(prob => next.has(prob.title))) {
+      subtopics.forEach(st => markSubtopicPassed(st.id).then(onSubtopicPassed).catch(() => {}));
+    }
+    setActive(null);
+  }
 
   // ── Playground view ──
-  if (selected === "final") {
+  if (active) {
     return (
       <div className="space-y-5">
-        <button onClick={() => setSelected(null)}
+        <button onClick={() => setActive(null)}
           className="text-sm text-zinc-500 hover:text-zinc-800 transition-colors">
-          ← Back
+          ← Back to Assessment
         </button>
         <CodingPlayground
-          problem={cfg.finalProblem}
-          isHard={true}
-          onComplete={() => { completeFinal().catch(() => {}); setSelected(null); }}
-        />
-      </div>
-    );
-  }
-
-  if (typeof selected === "number") {
-    return (
-      <div className="space-y-5">
-        <button onClick={() => setSelected(null)}
-          className="text-sm text-zinc-500 hover:text-zinc-800 transition-colors">
-          ← Back
-        </button>
-        <CodingPlayground
-          problem={cfg.codingProblems[selected]}
-          isHard={false}
-          onComplete={() => handleComplete(selected)}
+          problem={active}
+          isHard={active.difficulty === "hard"}
+          onComplete={() => handleComplete(active)}
         />
       </div>
     );
@@ -1165,66 +1177,61 @@ function AssessmentTab({
 
   // ── List view ──
   return (
-    <div className="max-w-2xl mx-auto space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-base font-bold text-zinc-800">Assessment</h2>
-        <span className="text-sm text-zinc-500">{passedCount}/{total} passed</span>
-      </div>
-
-      <div className="space-y-3">
-        {cfg.subtopics.map((s, i) => {
-          const isPassed = localPassed.has(i);
-          const problem = cfg.codingProblems[i];
-          return (
-            <div key={i} className={`flex items-center gap-4 p-4 rounded-2xl border transition-colors ${
-              isPassed ? "bg-emerald-50 border-emerald-200" : "bg-white border-zinc-200"
-            }`}>
-              <span className="text-2xl">{s.icon}</span>
-              <div className="flex-1 min-w-0">
-                <div className="font-semibold text-zinc-800 text-sm">{s.title}</div>
-                <div className="text-xs text-zinc-400 mt-0.5 truncate">{problem?.title}</div>
-              </div>
-              {isPassed && (
-                <span className="text-xs font-semibold text-emerald-700 bg-emerald-100 px-2.5 py-1 rounded-full shrink-0">
-                  ✓ Passed
-                </span>
-              )}
-              <button
-                onClick={() => setSelected(i)}
-                className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors shrink-0 ${
-                  isPassed
-                    ? "text-zinc-400 hover:text-zinc-600 text-xs underline"
-                    : "bg-sky-600 hover:bg-sky-500 text-white"
-                }`}
-              >
-                {isPassed ? "Retake" : "Start →"}
-              </button>
-            </div>
-          );
-        })}
-
-        {/* Final challenge — unlocks once all subtopics are passed */}
-        <div className={`flex items-center gap-4 p-4 rounded-2xl border transition-colors ${
-          allPassed ? "bg-white border-amber-200" : "bg-zinc-50 border-zinc-200 opacity-50"
-        }`}>
-          <span className="text-2xl">🏆</span>
-          <div className="flex-1 min-w-0">
-            <div className="font-semibold text-zinc-800 text-sm">{cfg.finalProblem.title}</div>
-            <div className="text-xs text-zinc-400 mt-0.5">Final challenge — complete all subtopics first</div>
-          </div>
-          <button
-            onClick={() => allPassed && setSelected("final")}
-            disabled={!allPassed}
-            className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors shrink-0 ${
-              allPassed
-                ? "bg-amber-500 hover:bg-amber-400 text-white"
-                : "bg-zinc-200 text-zinc-400 cursor-not-allowed"
-            }`}
-          >
-            {allPassed ? "Start →" : "Locked"}
-          </button>
+    <div className="max-w-2xl mx-auto space-y-6">
+      {allDone && (
+        <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 font-semibold text-sm">
+          🏆 All levels complete — topic mastered!
         </div>
-      </div>
+      )}
+
+      {(["easy", "medium", "hard"] as const).map(diff => {
+        const problems = byDiff[diff];
+        if (problems.length === 0) return null;
+        const locked = isLocked(diff);
+        const meta = DIFF_META[diff];
+        const levelDone = problems.every(p => passed.has(p.title));
+        const prereqLabel = diff === "medium" ? "Easy" : "Medium";
+
+        return (
+          <div key={diff} className={locked ? "opacity-50 pointer-events-none select-none" : ""}>
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-base">{meta.dot}</span>
+              <span className="font-bold text-zinc-800">{meta.label}</span>
+              {locked && <span className="text-xs text-zinc-400 font-normal">— finish {prereqLabel} first</span>}
+              {!locked && levelDone && <span className="text-xs text-emerald-600 font-semibold ml-1">All passed ✓</span>}
+            </div>
+
+            <div className="space-y-2">
+              {problems.map((p, i) => {
+                const done = passed.has(p.title);
+                return (
+                  <div key={i} className={`flex items-center gap-4 p-4 rounded-2xl border transition-colors ${
+                    done ? "bg-emerald-50 border-emerald-200" : "bg-white border-zinc-200"
+                  }`}>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-zinc-800 text-sm">{p.title}</div>
+                      <div className="text-xs text-zinc-400 mt-0.5 line-clamp-1">{p.description}</div>
+                    </div>
+                    {done && (
+                      <span className="text-xs font-semibold text-emerald-700 bg-emerald-100 px-2.5 py-1 rounded-full shrink-0">
+                        ✓ Passed
+                      </span>
+                    )}
+                    <button
+                      onClick={() => setActive(p)}
+                      className={`px-4 py-2 rounded-xl text-sm font-semibold shrink-0 transition-colors ${
+                        done ? "text-zinc-400 hover:text-zinc-600 text-xs underline" : meta.btnCls
+                      }`}
+                    >
+                      {done ? "Retake" : "Start →"}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

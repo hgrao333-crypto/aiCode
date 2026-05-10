@@ -61,6 +61,7 @@ export interface CodingProblem {
   code: string;
   blanks: Blank[];
   hint: string;
+  difficulty?: "easy" | "medium" | "hard";
 }
 
 // ── Course config — the contract every course must satisfy ───────────────────

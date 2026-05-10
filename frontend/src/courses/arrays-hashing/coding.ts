@@ -2,6 +2,7 @@ import type { CodingProblem } from "../types";
 
 export const CODING_PROBLEMS: CodingProblem[] = [
   {
+    difficulty: "easy",
     title: "Frequency Counter",
     description: "Count how many times each number appears. Use dict.get(key, default) to handle missing keys without a KeyError.",
     code: `def count_frequencies(nums):
@@ -16,6 +17,7 @@ export const CODING_PROBLEMS: CodingProblem[] = [
     hint: "dict.get(key, 0) returns the current count or 0 if the key doesn't exist yet. Add 1 to that to increment.",
   },
   {
+    difficulty: "easy",
     title: "Contains Duplicate",
     description: "Return True if any value appears more than once. A set gives O(1) membership tests — better than a list's O(n).",
     code: `def contains_duplicate(nums):
@@ -32,6 +34,7 @@ export const CODING_PROBLEMS: CodingProblem[] = [
     hint: "A set has O(1) `in` checks. If the number is already in the set, it's a duplicate. Otherwise, add it and keep scanning.",
   },
   {
+    difficulty: "medium",
     title: "Valid Anagram",
     description: "Two strings are anagrams if they use the same letters the same number of times. Count up for s, count down for t.",
     code: `def is_anagram(s, t):
@@ -55,6 +58,7 @@ export const CODING_PROBLEMS: CodingProblem[] = [
 ];
 
 export const FINAL_PROBLEM: CodingProblem = {
+  difficulty: "hard",
   title: "Two Sum — One Pass",
   description: "Hard: find indices of the two numbers that sum to target. O(n) time, O(n) space. Fill the complement formula, the index lookup, and the storage line.",
   code: `def two_sum(nums, target):
