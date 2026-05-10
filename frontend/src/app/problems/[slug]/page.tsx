@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import ReactMarkdown from "react-markdown";
@@ -77,7 +77,9 @@ export default function ProblemPage() {
   const { user, loading: authLoading, logout } = useAuth();
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
   const slug = params.slug as string;
+  const backHref = searchParams.get("from") ?? "/problems";
 
   const [problem, setProblem] = useState<Problem | null>(null);
   const [code, setCode] = useState("");
@@ -255,8 +257,8 @@ export default function ProblemPage() {
 
       {/* ── Nav ── */}
       <nav className="shrink-0 border-b border-gray-800 px-4 h-10 flex items-center gap-3">
-        <Link href="/problems" className="text-gray-500 hover:text-white text-xs transition-colors">
-          ← Problems
+        <Link href={backHref} className="text-gray-500 hover:text-white text-xs transition-colors">
+          ← Back
         </Link>
         <span className="text-white text-sm font-semibold">{problem?.title}</span>
         <span className={`text-xs font-medium ${DIFF_COLOR[problem?.difficulty ?? "medium"]}`}>
@@ -461,10 +463,10 @@ export default function ProblemPage() {
                     Try again
                   </button>
                   <Link
-                    href="/problems"
+                    href={backHref}
                     className="flex-1 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold transition-colors text-center"
                   >
-                    Next problem →
+                    {backHref.startsWith("/topics") ? "Back to Topic →" : "Next problem →"}
                   </Link>
                 </div>
               </div>

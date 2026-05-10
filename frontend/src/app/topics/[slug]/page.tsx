@@ -1115,31 +1115,27 @@ function AssessmentTab({
   subtopics: SubTopicDetail[];
   onSubtopicPassed: () => void;
 }) {
-  const cfg = getCourseConfig(slug) ?? getCourseConfig("knapsack")!;
+  // Auto-mark a subtopic as passed when every one of its problems is gate_passed
+  useEffect(() => {
+    subtopics.forEach(st => {
+      if (!st.gate_passed && st.problems.length > 0 && st.problems.every(p => p.gate_passed)) {
+        markSubtopicPassed(st.id).then(onSubtopicPassed).catch(() => {});
+      }
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subtopics]);
 
-  // Flat list: all coding problems + final (always hard)
-  type Prob = CodingProblem & { difficulty: "easy" | "medium" | "hard" };
-  const allProblems: Prob[] = [
-    ...cfg.codingProblems.map(p => ({ ...p, difficulty: (p.difficulty ?? "easy") as "easy" | "medium" | "hard" })),
-    { ...cfg.finalProblem, difficulty: "hard" as const },
-  ];
+  const allProblems = subtopics.flatMap(st => st.problems);
   const byDiff = {
     easy:   allProblems.filter(p => p.difficulty === "easy"),
     medium: allProblems.filter(p => p.difficulty === "medium"),
     hard:   allProblems.filter(p => p.difficulty === "hard"),
   };
 
-  // Pass state persisted in localStorage
-  const storageKey = `assessment_v1_${slug}`;
-  const [passed, setPassed] = useState<Set<string>>(() => {
-    try { return new Set(JSON.parse(localStorage.getItem(storageKey) ?? "[]")); }
-    catch { return new Set(); }
-  });
-  const [active, setActive] = useState<Prob | null>(null);
-
-  const easyDone   = byDiff.easy.length === 0   || byDiff.easy.every(p => passed.has(p.title));
-  const mediumDone = byDiff.medium.length === 0  || byDiff.medium.every(p => passed.has(p.title));
-  const allDone    = easyDone && mediumDone && (byDiff.hard.length === 0 || byDiff.hard.every(p => passed.has(p.title)));
+  const easyDone   = byDiff.easy.length === 0   || byDiff.easy.every(p => p.gate_passed);
+  const mediumDone = byDiff.medium.length === 0  || byDiff.medium.every(p => p.gate_passed);
+  const allDone    = easyDone && mediumDone && (byDiff.hard.length === 0 || byDiff.hard.every(p => p.gate_passed));
+  const passedCount = allProblems.filter(p => p.gate_passed).length;
 
   function isLocked(diff: "easy" | "medium" | "hard") {
     if (diff === "easy") return false;
@@ -1147,37 +1143,24 @@ function AssessmentTab({
     return !mediumDone;
   }
 
-  function handleComplete(p: Prob) {
-    const next = new Set([...passed, p.title]);
-    setPassed(next);
-    localStorage.setItem(storageKey, JSON.stringify([...next]));
-    // When ALL problems done → mark all subtopics passed in DB
-    if (allProblems.every(prob => next.has(prob.title))) {
-      subtopics.forEach(st => markSubtopicPassed(st.id).then(onSubtopicPassed).catch(() => {}));
-    }
-    setActive(null);
-  }
-
-  // ── Playground view ──
-  if (active) {
+  if (allProblems.length === 0) {
     return (
-      <div className="space-y-5">
-        <button onClick={() => setActive(null)}
-          className="text-sm text-zinc-500 hover:text-zinc-800 transition-colors">
-          ← Back to Assessment
-        </button>
-        <CodingPlayground
-          problem={active}
-          isHard={active.difficulty === "hard"}
-          onComplete={() => handleComplete(active)}
-        />
+      <div className="text-center py-16 text-zinc-500 text-sm">
+        No assessment problems available for this topic yet.
       </div>
     );
   }
 
-  // ── List view ──
   return (
     <div className="max-w-2xl mx-auto space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-base font-bold text-zinc-800">Assessment</h2>
+          <p className="text-xs text-zinc-400 mt-0.5">Write and run real code — solve each level to pass the topic</p>
+        </div>
+        <span className="text-sm text-zinc-500">{passedCount}/{allProblems.length} passed</span>
+      </div>
+
       {allDone && (
         <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 font-semibold text-sm">
           🏆 All levels complete — topic mastered!
@@ -1189,7 +1172,7 @@ function AssessmentTab({
         if (problems.length === 0) return null;
         const locked = isLocked(diff);
         const meta = DIFF_META[diff];
-        const levelDone = problems.every(p => passed.has(p.title));
+        const levelDone = problems.every(p => p.gate_passed);
         const prereqLabel = diff === "medium" ? "Easy" : "Medium";
 
         return (
@@ -1202,32 +1185,31 @@ function AssessmentTab({
             </div>
 
             <div className="space-y-2">
-              {problems.map((p, i) => {
-                const done = passed.has(p.title);
-                return (
-                  <div key={i} className={`flex items-center gap-4 p-4 rounded-2xl border transition-colors ${
-                    done ? "bg-emerald-50 border-emerald-200" : "bg-white border-zinc-200"
-                  }`}>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-zinc-800 text-sm">{p.title}</div>
-                      <div className="text-xs text-zinc-400 mt-0.5 line-clamp-1">{p.description}</div>
-                    </div>
-                    {done && (
-                      <span className="text-xs font-semibold text-emerald-700 bg-emerald-100 px-2.5 py-1 rounded-full shrink-0">
-                        ✓ Passed
-                      </span>
-                    )}
-                    <button
-                      onClick={() => setActive(p)}
-                      className={`px-4 py-2 rounded-xl text-sm font-semibold shrink-0 transition-colors ${
-                        done ? "text-zinc-400 hover:text-zinc-600 text-xs underline" : meta.btnCls
-                      }`}
-                    >
-                      {done ? "Retake" : "Start →"}
-                    </button>
+              {problems.map((p) => (
+                <div key={p.id} className={`flex items-center gap-4 p-4 rounded-2xl border transition-colors ${
+                  p.gate_passed ? "bg-emerald-50 border-emerald-200" : "bg-white border-zinc-200"
+                }`}>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-zinc-800 text-sm">{p.title}</div>
+                    <div className="text-xs text-zinc-400 mt-0.5 capitalize">{p.difficulty}</div>
                   </div>
-                );
-              })}
+                  {p.gate_passed && (
+                    <span className="text-xs font-semibold text-emerald-700 bg-emerald-100 px-2.5 py-1 rounded-full shrink-0">
+                      ✓ Passed
+                    </span>
+                  )}
+                  <Link
+                    href={`/problems/${p.slug}?from=/topics/${slug}`}
+                    className={`px-4 py-2 rounded-xl text-sm font-semibold shrink-0 transition-colors ${
+                      p.gate_passed
+                        ? "text-zinc-400 hover:text-zinc-600 text-xs underline"
+                        : meta.btnCls
+                    }`}
+                  >
+                    {p.gate_passed ? "Retry" : "Solve →"}
+                  </Link>
+                </div>
+              ))}
             </div>
           </div>
         );
