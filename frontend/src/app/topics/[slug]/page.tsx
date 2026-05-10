@@ -11,7 +11,7 @@ import type { SubtopicCfg, CodingProblem } from "@/courses";
 
 // ─── Tab types ─────────────────────────────────────────────────────────────────
 
-type Tab = "explore" | "tutor" | "problems" | "videos";
+type Tab = "explore" | "tutor" | "assessment" | "videos";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CHALLENGE: Knapsack interactive puzzle
@@ -1100,57 +1100,96 @@ function YouTubeEmbed({ youtubeId, title }: { youtubeId: string; title: string }
   );
 }
 
-const DIFF_ORDER: Record<string, number> = { easy: 0, medium: 1, hard: 2 };
-const DIFF_COLOR: Record<string, string> = { easy: "text-green-600", medium: "text-yellow-600", hard: "text-red-600" };
-const DIFF_LOCK_LABEL: Record<string, string> = { medium: "Complete Easy first", hard: "Complete Medium first" };
+function AssessmentTab({
+  slug,
+  subtopics,
+  onSubtopicPassed,
+}: {
+  slug: string;
+  subtopics: SubTopicDetail[];
+  onSubtopicPassed: () => void;
+}) {
+  const cfg = getCourseConfig(slug) ?? getCourseConfig("knapsack")!;
+  const [selected, setSelected] = useState<number | null>(null);
+  const [localPassed, setLocalPassed] = useState<Set<number>>(
+    () => new Set(subtopics.map((st, i) => (st.gate_passed ? i : -1)).filter(i => i >= 0))
+  );
 
-function ProblemsTab({ topic }: { topic: TopicDetail }) {
-  const hasProblems = topic.subtopics.some(st => st.problems.length > 0);
-  if (!hasProblems) {
-    return <div className="text-center py-16 text-zinc-500 text-sm">No problems yet for this topic.</div>;
+  function handleComplete(idx: number) {
+    const dbId = subtopics[idx]?.id;
+    if (dbId) {
+      markSubtopicPassed(dbId).then(() => {
+        setLocalPassed(p => new Set([...p, idx]));
+        onSubtopicPassed();
+      }).catch(() => {});
+    } else {
+      setLocalPassed(p => new Set([...p, idx]));
+    }
+    setSelected(null);
   }
+
+  if (selected !== null) {
+    const subtopicCfg = cfg.subtopics[selected];
+    return (
+      <div className="space-y-4">
+        <button
+          onClick={() => setSelected(null)}
+          className="text-sm text-zinc-500 hover:text-zinc-800 transition-colors flex items-center gap-1"
+        >
+          ← All subtopics
+        </button>
+        <AssessmentPhase cfg={subtopicCfg} onComplete={() => handleComplete(selected)} />
+      </div>
+    );
+  }
+
+  const total = cfg.subtopics.length;
+  const passedCount = localPassed.size;
+
   return (
-    <div className="space-y-8">
-      {topic.subtopics.map((st) => {
-        if (st.problems.length === 0) return null;
-        const sorted = [...st.problems].sort((a, b) => (DIFF_ORDER[a.difficulty] ?? 3) - (DIFF_ORDER[b.difficulty] ?? 3));
-        const easyPassed = sorted.filter(p => p.difficulty === "easy").every(p => p.gate_passed);
-        const mediumPassed = sorted.filter(p => p.difficulty === "medium").every(p => p.gate_passed);
-        function isLocked(d: string) { return d === "medium" ? !easyPassed : d === "hard" ? !mediumPassed : false; }
-        return (
-          <div key={st.id}>
-            <div className="flex items-center gap-2 mb-3">
-              <h3 className="text-zinc-800 font-semibold text-sm">{st.title}</h3>
-              {st.gate_passed && (
-                <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded-full border border-green-200">Gate passed</span>
+    <div className="max-w-2xl mx-auto space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-base font-bold text-zinc-800">Assessment</h2>
+        <span className="text-sm text-zinc-500">{passedCount}/{total} passed</span>
+      </div>
+
+      {passedCount === total && total > 0 && (
+        <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-medium">
+          🏆 All subtopics passed — topic complete!
+        </div>
+      )}
+
+      <div className="space-y-3">
+        {cfg.subtopics.map((s, i) => {
+          const isPassed = localPassed.has(i);
+          return (
+            <div key={i} className={`flex items-center gap-4 p-4 rounded-2xl border transition-colors ${
+              isPassed ? "bg-emerald-50 border-emerald-200" : "bg-white border-zinc-200"
+            }`}>
+              <span className="text-2xl">{s.icon}</span>
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold text-zinc-800 text-sm">{s.title}</div>
+                <div className="text-xs text-zinc-400 mt-0.5">{s.assessment.length} questions</div>
+              </div>
+              {isPassed && (
+                <span className="text-xs font-semibold text-emerald-700 bg-emerald-100 px-2.5 py-1 rounded-full shrink-0">
+                  ✓ Passed
+                </span>
               )}
+              <button
+                onClick={() => setSelected(i)}
+                className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors shrink-0 ${
+                  isPassed
+                    ? "text-zinc-400 hover:text-zinc-600 underline text-xs px-0 py-0 bg-transparent"
+                    : "bg-sky-600 hover:bg-sky-500 text-white"
+                }`}
+              >
+                {isPassed ? "Retake" : "Start →"}
+              </button>
             </div>
-            <div className="space-y-2">
-              {sorted.map((p) => isLocked(p.difficulty) ? (
-                <div key={p.id} className="flex items-center gap-4 p-3 rounded-lg border border-zinc-200 bg-zinc-50 opacity-50 cursor-not-allowed">
-                  <span className="text-zinc-400 text-sm">🔒</span>
-                  <div className="flex-1 text-sm text-zinc-500">{p.title}</div>
-                  <span className="text-xs text-zinc-400">{DIFF_LOCK_LABEL[p.difficulty]}</span>
-                  <span className={`text-xs font-medium ${DIFF_COLOR[p.difficulty] ?? "text-zinc-600"}`}>{p.difficulty}</span>
-                </div>
-              ) : (
-                <Link key={p.id} href={`/problems/${p.slug}`}
-                  className={`flex items-center gap-4 p-3 rounded-lg border transition-colors group ${
-                    p.gate_passed ? "border-green-200 bg-green-50 hover:border-green-300"
-                      : "border-zinc-200 bg-white hover:border-sky-300 shadow-sm"
-                  }`}>
-                  <span className="text-sm">{p.gate_passed ? "✓" : "→"}</span>
-                  <div className={`flex-1 text-sm transition-colors ${p.gate_passed ? "text-green-700" : "text-zinc-800 group-hover:text-sky-600"}`}>
-                    {p.title}
-                  </div>
-                  {p.gate_passed && <span className="text-xs text-green-600">Passed</span>}
-                  <span className={`text-xs font-medium ${DIFF_COLOR[p.difficulty] ?? "text-zinc-600"}`}>{p.difficulty}</span>
-                </Link>
-              ))}
-            </div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -1264,12 +1303,12 @@ export default function TopicPage() {
           </button>
 
           <button
-            onClick={() => setTab("problems")}
+            onClick={() => setTab("assessment")}
             className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
-              tab === "problems" ? "border-bark-600 text-bark-800" : "border-transparent text-bark-500 hover:text-bark-800"
+              tab === "assessment" ? "border-bark-600 text-bark-800" : "border-transparent text-bark-500 hover:text-bark-800"
             }`}
           >
-            💻 Problems
+            📝 Assessment
           </button>
 
           <button onClick={() => setTab("videos")}
@@ -1284,7 +1323,7 @@ export default function TopicPage() {
 
         {/* Tab content */}
         {tab === "explore"   && <TopicExplorer slug={slug} />}
-        {tab === "problems"  && <ProblemsTab topic={topic} />}
+        {tab === "assessment" && <AssessmentTab slug={slug} subtopics={topic.subtopics} onSubtopicPassed={() => setRefreshKey(k => k + 1)} />}
         {tab === "tutor" && <TutorTab slug={slug} subtopics={topic.subtopics} onSubtopicPassed={() => setRefreshKey(k => k + 1)} />}
 
         {tab === "videos" && (
