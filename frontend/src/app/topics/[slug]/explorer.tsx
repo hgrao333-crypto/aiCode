@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -44,12 +44,15 @@ function ArraysHashingExplorer() {
   const [hashIdx, setHashIdx] = useState(-1);
   const [hashSet, setHashSet] = useState<number[]>([]);
   const [hashFound, setHashFound] = useState(false);
+  const [comparisons, setComparisons] = useState(0);
 
   function handleClick(idx: number) {
     if (phase !== "manual" || found !== null) return;
     if (checked.includes(idx)) return;
     const next = [...checked, idx];
     setChecked(next);
+    // Count how many comparisons this click causes (compare with all previous)
+    setComparisons(c => c + next.length - 1);
     const seen = new Set<number>();
     for (const i of next) {
       if (seen.has(AH_ARRAY[i])) { setFound(AH_ARRAY[i]); return; }
@@ -82,16 +85,15 @@ function ArraysHashingExplorer() {
 
   function reset() {
     setChecked([]); setFound(null); setPhase("manual");
-    setHashIdx(-1); setHashSet([]); setHashFound(false);
+    setHashIdx(-1); setHashSet([]); setHashFound(false); setComparisons(0);
   }
-
-  const clicks = checked.length;
 
   return (
     <div className="max-w-xl mx-auto">
       <h2 className="text-lg font-bold text-zinc-800 mb-1">Find the duplicate</h2>
       <p className="text-zinc-500 text-sm mb-5">
         Click cards to check them. Find the number that appears twice.
+        Each click compares against all previously checked values.
       </p>
 
       <div className="flex flex-wrap gap-2 mb-4">
@@ -122,15 +124,18 @@ function ArraysHashingExplorer() {
         })}
       </div>
 
-      <div className="text-xs text-zinc-400 mb-3">Clicks used: <span className="font-mono font-bold text-zinc-600">{clicks}</span></div>
+      <div className="text-xs text-zinc-400 mb-3">
+        Comparisons made: <span className="font-mono font-bold text-zinc-600">{comparisons}</span>
+        {comparisons > 0 && <span className="ml-2 text-zinc-300">(worst case for {checked.length} items: {checked.length * (checked.length - 1) / 2})</span>}
+      </div>
 
       <AnimatePresence>
         {found && phase === "manual" && (
           <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
             className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm mb-4"
           >
-            ✓ Found <strong>{found}</strong> in <strong>{clicks}</strong> clicks.{" "}
-            Now watch how a hash set does it in one linear sweep:
+            ✓ Found <strong>{found}</strong> with <strong>{comparisons}</strong> comparisons.{" "}
+            Now watch how a hash set does it — one O(1) check per element:
           </motion.div>
         )}
       </AnimatePresence>
@@ -145,7 +150,7 @@ function ArraysHashingExplorer() {
 
       {phase === "hash" && !hashFound && (
         <div className="text-sm text-zinc-500 mb-3 animate-pulse">
-          Scanning... checking if <strong className="text-sky-700">{AH_ARRAY[hashIdx]}</strong> is already in the set
+          Scanning... is <strong className="text-sky-700">{AH_ARRAY[hashIdx]}</strong> in the set? {hashSet.length > 0 ? `{${hashSet.join(", ")}}` : "{}"}
         </div>
       )}
 
@@ -159,7 +164,7 @@ function ArraysHashingExplorer() {
       )}
 
       {phase === "done" && (
-        <InsightBox text={`You needed ${clicks} manual clicks. The hash set found it in ${hashIdx + 1} steps — without ever comparing pairs. That's the difference between O(n²) and O(n).`} />
+        <InsightBox text={`You made ${comparisons} comparisons. The hash set found it in ${hashIdx + 1} element checks — one O(1) lookup per element. That's O(n) vs your O(n²) approach. For 1000 elements: 1000 hash checks vs up to 500,000 comparisons.`} />
       )}
 
       <ResetButton onClick={reset} />
@@ -168,149 +173,131 @@ function ArraysHashingExplorer() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Two Pointers — "Sum Hunt"
-// Find two numbers that add to the target. Feel the brute force, then watch
-// two pointers converge in a fraction of the checks.
+// Two Pointers — "Guide the Pointers"
+// User controls L and R pointers step by step. Feel why sorted + two pointers
+// is always more efficient than brute force.
 // ─────────────────────────────────────────────────────────────────────────────
 const TP_NUMS = [1, 4, 6, 8, 10, 13, 15, 18];
 const TP_TARGET = 22;
 
 function TwoPointersExplorer() {
-  const [sel, setSel] = useState<number[]>([]);
-  const [bruteChecks, setBruteChecks] = useState<[number,number][]>([]);
-  const [bruteRunning, setBruteRunning] = useState(false);
-  const [tpStep, setTpStep] = useState(-1);
-  const [phase, setPhase] = useState<"pick" | "brute" | "twoptr" | "done">("pick");
+  const [l, setL] = useState(0);
+  const [r, setR] = useState(TP_NUMS.length - 1);
+  const [steps, setSteps] = useState(0);
+  const [found, setFound] = useState(false);
+  const [lastHint, setLastHint] = useState("");
+  const [phase, setPhase] = useState<"play" | "done">("play");
 
-  function select(i: number) {
-    if (phase !== "pick") return;
-    if (sel.includes(i)) { setSel(sel.filter(x => x !== i)); return; }
-    if (sel.length === 2) return;
-    const next = [...sel, i];
-    setSel(next);
-    if (next.length === 2) {
-      const sum = TP_NUMS[next[0]] + TP_NUMS[next[1]];
-      if (sum === TP_TARGET) setPhase("brute");
-    }
-  }
-
-  function runBrute() {
-    setBruteRunning(true);
-    const checks: [number,number][] = [];
-    for (let i = 0; i < TP_NUMS.length; i++)
-      for (let j = i+1; j < TP_NUMS.length; j++)
-        checks.push([i,j]);
-    setBruteChecks([]);
-    let idx = 0;
-    const interval = setInterval(() => {
-      if (idx >= checks.length) { clearInterval(interval); setBruteRunning(false); setPhase("twoptr"); return; }
-      setBruteChecks(c => [...c, checks[idx]]);
-      idx++;
-    }, 80);
-  }
-
-  useEffect(() => {
-    if (phase !== "twoptr") return;
-    setTpStep(0);
-  }, [phase]);
-
-  useEffect(() => {
-    if (tpStep < 0) return;
-    let l = 0, r = TP_NUMS.length - 1, step = 0;
-    // find which step we're at
-    let ll = 0, rr = TP_NUMS.length - 1;
-    for (let s = 0; s <= tpStep; s++) {
-      const sum = TP_NUMS[ll] + TP_NUMS[rr];
-      if (sum === TP_TARGET || ll >= rr) break;
-      if (sum < TP_TARGET) ll++; else rr--;
-    }
-    if (TP_NUMS[ll] + TP_NUMS[rr] === TP_TARGET) { setPhase("done"); return; }
-    const timer = setTimeout(() => setTpStep(s => s + 1), 500);
-    return () => clearTimeout(timer);
-  }, [tpStep]);
-
-  // compute current tp pointers
-  let tpL = 0, tpR = TP_NUMS.length - 1;
-  for (let s = 0; s < tpStep && tpL < tpR; s++) {
-    const sum = TP_NUMS[tpL] + TP_NUMS[tpR];
-    if (sum === TP_TARGET) break;
-    if (sum < TP_TARGET) tpL++; else tpR--;
-  }
-
+  const sum = TP_NUMS[l] + TP_NUMS[r];
   const totalBrutePairs = (TP_NUMS.length * (TP_NUMS.length - 1)) / 2;
-  const answerIndices = TP_NUMS.map((_, i) =>
-    TP_NUMS.findIndex((n, j) => j > i && n + TP_NUMS[i] === TP_TARGET) !== -1 ? i : -1
-  ).filter(i => i !== -1);
 
-  function reset() { setSel([]); setBruteChecks([]); setBruteRunning(false); setTpStep(-1); setPhase("pick"); }
+  function moveL() {
+    if (found || l >= r - 1) return;
+    const newL = l + 1;
+    const newSum = TP_NUMS[newL] + TP_NUMS[r];
+    setL(newL);
+    setSteps(s => s + 1);
+    if (newSum === TP_TARGET) { setFound(true); setPhase("done"); }
+    else setLastHint(newSum < TP_TARGET ? "Sum increased but still low — move L again" : "Sum is now too high — try moving R ←");
+  }
+
+  function moveR() {
+    if (found || r <= l + 1) return;
+    const newR = r - 1;
+    const newSum = TP_NUMS[l] + TP_NUMS[newR];
+    setR(newR);
+    setSteps(s => s + 1);
+    if (newSum === TP_TARGET) { setFound(true); setPhase("done"); }
+    else setLastHint(newSum > TP_TARGET ? "Sum decreased but still high — move R again" : "Sum is now too low — try moving L →");
+  }
+
+  function reset() { setL(0); setR(TP_NUMS.length - 1); setSteps(0); setFound(false); setLastHint(""); setPhase("play"); }
+
+  const tooLow = sum < TP_TARGET;
+  const tooHigh = sum > TP_TARGET;
 
   return (
     <div className="max-w-xl mx-auto">
-      <h2 className="text-lg font-bold text-zinc-800 mb-1">Hit the target</h2>
-      <p className="text-zinc-500 text-sm mb-2">
-        This sorted array hides a pair that sums to <span className="font-bold text-sky-600">{TP_TARGET}</span>. Click two numbers.
+      <h2 className="text-lg font-bold text-zinc-800 mb-1">Guide the pointers</h2>
+      <p className="text-zinc-500 text-sm mb-1">
+        Find two numbers in this <strong>sorted</strong> array that sum to <span className="font-bold text-sky-600">{TP_TARGET}</span>.
       </p>
-      <div className="flex gap-2 mb-5">
+      <p className="text-xs text-zinc-400 mb-5">
+        Move L → when the sum is too low. Move ← R when the sum is too high. Why does this always work?
+      </p>
+
+      {/* Array with L/R labels */}
+      <div className="flex gap-1.5 mb-2">
         {TP_NUMS.map((n, i) => {
-          const isSel = sel.includes(i);
-          const isBruteActive = bruteChecks.length > 0 && bruteChecks[bruteChecks.length-1][0] === i || bruteChecks.length > 0 && bruteChecks[bruteChecks.length-1][1] === i;
-          const isAnswer = phase === "done" && (i === tpL || i === tpR);
-          const isTpL = (phase === "twoptr" || phase === "done") && i === tpL;
-          const isTpR = (phase === "twoptr" || phase === "done") && i === tpR;
+          const isL = i === l;
+          const isR = i === r;
+          const isBetween = i > l && i < r;
           return (
-            <div key={i} className="flex flex-col items-center gap-1">
-              <motion.button onClick={() => select(i)} whileHover={phase === "pick" ? { scale: 1.1 } : {}}
-                className={`w-11 h-11 rounded-xl text-sm font-bold border-2 transition-all ${
-                  isAnswer    ? "bg-emerald-500 border-emerald-400 text-white scale-110 shadow-md" :
-                  isTpL       ? "bg-sky-400 border-sky-300 text-white" :
-                  isTpR       ? "bg-violet-400 border-violet-300 text-white" :
-                  isBruteActive ? "bg-amber-200 border-amber-400 text-amber-800" :
-                  isSel       ? "bg-sky-100 border-sky-400 text-sky-800" :
-                                "bg-white border-zinc-200 text-zinc-700 hover:border-sky-300"
+            <div key={i} className="flex flex-col items-center gap-1 flex-1">
+              <motion.div
+                animate={{ scale: (isL || isR) ? 1.12 : 1 }}
+                className={`w-full h-11 rounded-xl text-sm font-bold border-2 flex items-center justify-center transition-colors ${
+                  found && (isL || isR) ? "bg-emerald-500 border-emerald-400 text-white shadow-md" :
+                  isL   ? "bg-sky-400 border-sky-300 text-white" :
+                  isR   ? "bg-violet-400 border-violet-300 text-white" :
+                  isBetween ? "bg-zinc-50 border-zinc-200 text-zinc-500" :
+                              "bg-zinc-200 border-zinc-300 text-zinc-400"
                 }`}
-              >{n}</motion.button>
-              {isTpL && <span className="text-xs text-sky-500 font-bold">L</span>}
-              {isTpR && <span className="text-xs text-violet-500 font-bold">R</span>}
+              >{n}</motion.div>
+              <div className="text-[10px] font-bold h-4">
+                {isL && <span className="text-sky-500">L</span>}
+                {isR && <span className="text-violet-500">R</span>}
+              </div>
             </div>
           );
         })}
       </div>
 
-      {sel.length === 2 && TP_NUMS[sel[0]] + TP_NUMS[sel[1]] !== TP_TARGET && (
-        <p className="text-sm text-red-500 mb-3">
-          {TP_NUMS[sel[0]]} + {TP_NUMS[sel[1]]} = {TP_NUMS[sel[0]] + TP_NUMS[sel[1]]} — not {TP_TARGET}. Try again.
-        </p>
-      )}
+      {/* Sum display */}
+      <div className={`mb-4 p-3 rounded-xl border text-sm font-mono text-center transition-colors ${
+        found       ? "bg-emerald-50 border-emerald-300 text-emerald-800" :
+        tooLow      ? "bg-sky-50 border-sky-200 text-sky-800" :
+        tooHigh     ? "bg-violet-50 border-violet-200 text-violet-800" :
+                      "bg-zinc-50 border-zinc-200 text-zinc-600"
+      }`}>
+        {found
+          ? `🎉 ${TP_NUMS[l]} + ${TP_NUMS[r]} = ${TP_TARGET} — found in ${steps} steps!`
+          : `${TP_NUMS[l]} + ${TP_NUMS[r]} = ${sum} ${tooLow ? `→ too low, need +${TP_TARGET - sum}` : `→ too high, need −${sum - TP_TARGET}`}`
+        }
+      </div>
 
-      {phase === "brute" && !bruteRunning && bruteChecks.length === 0 && (
-        <div className="mb-3">
-          <p className="text-sm text-zinc-600 mb-2">Nice! Now watch brute force check <strong>every pair</strong>:</p>
-          <button onClick={runBrute}
-            className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-white text-sm font-semibold transition-colors"
+      {!found && (
+        <div className="flex gap-3 mb-3">
+          <button onClick={moveL} disabled={l >= r - 1}
+            className={`flex-1 py-2.5 rounded-xl text-sm font-semibold border-2 transition-colors ${
+              tooLow
+                ? "bg-sky-600 hover:bg-sky-500 text-white border-sky-600"
+                : "bg-white hover:bg-zinc-50 text-zinc-600 border-zinc-200"
+            }`}
           >
-            Run brute force ({totalBrutePairs} checks)
+            Move L → <span className="text-xs opacity-70">(increases sum)</span>
+          </button>
+          <button onClick={moveR} disabled={r <= l + 1}
+            className={`flex-1 py-2.5 rounded-xl text-sm font-semibold border-2 transition-colors ${
+              tooHigh
+                ? "bg-violet-600 hover:bg-violet-500 text-white border-violet-600"
+                : "bg-white hover:bg-zinc-50 text-zinc-600 border-zinc-200"
+            }`}
+          >
+            ← Move R <span className="text-xs opacity-70">(decreases sum)</span>
           </button>
         </div>
       )}
 
-      {bruteRunning && (
-        <div className="text-sm text-zinc-500 animate-pulse mb-3">
-          Checking pair {bruteChecks.length}/{totalBrutePairs}…
-        </div>
-      )}
-
-      {phase === "twoptr" && (
-        <div className="text-sm text-zinc-600 mb-3">
-          <span className="font-semibold text-sky-600">L</span> + <span className="font-semibold text-violet-600">R</span> ={" "}
-          <span className="font-mono">{TP_NUMS[tpL] + TP_NUMS[tpR]}</span>{" "}
-          {TP_NUMS[tpL] + TP_NUMS[tpR] < TP_TARGET ? "→ too small, move L right" : "→ too big, move R left"}
-        </div>
+      {lastHint && !found && (
+        <p className="text-xs text-zinc-400 italic mb-3">{lastHint}</p>
       )}
 
       {phase === "done" && (
-        <InsightBox text={`Brute force needed ${totalBrutePairs} pair comparisons. Two pointers found it in ${tpStep + 1} steps — by exploiting the sorted order. O(n) instead of O(n²).`} />
+        <InsightBox text={`You found it in ${steps} pointer moves. Brute force would check ${totalBrutePairs} pairs. Two pointers works because the array is sorted — if the sum is too low, the only way to increase it is to advance L (smaller values to the right). If too high, retreat R. Each pointer moves at most n times → O(n) total.`} />
       )}
 
+      <div className="mt-3 text-xs text-zinc-400">Steps: {steps} / max ~{TP_NUMS.length} &nbsp;·&nbsp; Brute force: {totalBrutePairs} checks</div>
       <ResetButton onClick={reset} />
     </div>
   );
@@ -318,48 +305,56 @@ function TwoPointersExplorer() {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sliding Window — "Ride the Wave"
-// Find the max-sum window of size 3. Try clicking manually, then watch the
-// window slide across adding/removing one element at a time.
+// Find the max-sum window of size 3. Move the window manually, then watch the
+// algorithm add one and subtract one at each step.
 // ─────────────────────────────────────────────────────────────────────────────
 const SW_VALS = [3, 1, 4, 1, 5, 9, 2, 6];
 const SW_K = 3;
 
 function SlidingWindowExplorer() {
   const [windowStart, setWindowStart] = useState(0);
-  const [sliding, setSliding] = useState(false);
   const [slideIdx, setSlideIdx] = useState(0);
   const [phase, setPhase] = useState<"manual" | "slide" | "done">("manual");
+  const [addRemoveAnim, setAddRemoveAnim] = useState<{remove: number; add: number} | null>(null);
 
   const maxStart = SW_VALS.length - SW_K;
   const currentSum = SW_VALS.slice(windowStart, windowStart + SW_K).reduce((a, b) => a + b, 0);
-  const maxSum = Math.max(...Array.from({ length: maxStart + 1 }, (_, i) => SW_VALS.slice(i, i + SW_K).reduce((a, b) => a + b, 0)));
-  const maxSumStart = Array.from({ length: maxStart + 1 }, (_, i) => SW_VALS.slice(i, i + SW_K).reduce((a, b) => a + b, 0)).indexOf(maxSum);
+  const allSums = Array.from({ length: maxStart + 1 }, (_, i) => SW_VALS.slice(i, i + SW_K).reduce((a, b) => a + b, 0));
+  const maxSum = Math.max(...allSums);
+  const maxSumStart = allSums.indexOf(maxSum);
+  const maxBarHeight = Math.max(...SW_VALS);
 
   function startSlide() {
     setPhase("slide");
     setSlideIdx(0);
     setWindowStart(0);
+    setAddRemoveAnim(null);
   }
 
   useEffect(() => {
     if (phase !== "slide") return;
-    if (slideIdx > maxStart) { setPhase("done"); setWindowStart(maxSumStart); return; }
+    if (slideIdx > maxStart) { setPhase("done"); setWindowStart(maxSumStart); setAddRemoveAnim(null); return; }
     const timer = setTimeout(() => {
+      if (slideIdx > 0) {
+        // Show what was removed and added
+        setAddRemoveAnim({
+          remove: SW_VALS[slideIdx - 1],
+          add: SW_VALS[slideIdx + SW_K - 1],
+        });
+      }
       setWindowStart(slideIdx);
       setSlideIdx(s => s + 1);
-    }, 500);
+    }, 700);
     return () => clearTimeout(timer);
   }, [phase, slideIdx, maxStart, maxSumStart]);
 
-  function reset() { setWindowStart(0); setSliding(false); setSlideIdx(0); setPhase("manual"); }
-
-  const maxBarHeight = Math.max(...SW_VALS);
+  function reset() { setWindowStart(0); setSlideIdx(0); setPhase("manual"); setAddRemoveAnim(null); }
 
   return (
     <div className="max-w-xl mx-auto">
       <h2 className="text-lg font-bold text-zinc-800 mb-1">Ride the wave</h2>
       <p className="text-zinc-500 text-sm mb-5">
-        Which <strong>{SW_K} consecutive bars</strong> have the highest total? Move the window manually, then watch the sliding window algorithm.
+        Which <strong>{SW_K} consecutive bars</strong> have the highest total? Move the window manually, then watch the algorithm&apos;s secret: it never recomputes the full sum.
       </p>
 
       {/* Bar chart */}
@@ -367,21 +362,49 @@ function SlidingWindowExplorer() {
         {SW_VALS.map((v, i) => {
           const inWindow = i >= windowStart && i < windowStart + SW_K;
           const isMax = phase === "done" && i >= maxSumStart && i < maxSumStart + SW_K;
+          const isRemoved = phase === "slide" && slideIdx > 1 && i === slideIdx - 2;
+          const isAdded = phase === "slide" && slideIdx > 1 && i === slideIdx + SW_K - 2;
           return (
             <motion.div key={i} layout
-              className={`flex-1 rounded-t-lg transition-colors ${
+              className={`flex-1 rounded-t-lg transition-colors relative ${
                 isMax    ? "bg-emerald-500" :
-                inWindow ? "bg-sky-400" : "bg-zinc-200"
+                isAdded  ? "bg-sky-400" :
+                isRemoved ? "bg-red-300" :
+                inWindow ? "bg-sky-300" :
+                           "bg-zinc-200"
               }`}
               style={{ height: `${(v / maxBarHeight) * 100}%` }}
             />
           );
         })}
       </div>
-      <div className="flex gap-1 mb-4">
+      <div className="flex gap-1 mb-1">
         {SW_VALS.map((v, i) => (
-          <div key={i} className="flex-1 text-center text-xs text-zinc-400">{v}</div>
+          <div key={i} className="flex-1 text-center text-xs text-zinc-500 font-mono">{v}</div>
         ))}
+      </div>
+
+      {/* Add/remove annotation */}
+      <div className="h-8 mb-3 flex items-center justify-center">
+        <AnimatePresence mode="wait">
+          {addRemoveAnim && phase === "slide" && (
+            <motion.div key={slideIdx} initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+              className="text-sm font-mono text-zinc-600"
+            >
+              <span className="text-red-500">−{addRemoveAnim.remove}</span>
+              <span className="text-zinc-400 mx-2">+</span>
+              <span className="text-sky-600">+{addRemoveAnim.add}</span>
+              <span className="text-zinc-400 mx-2">=</span>
+              <span className="font-bold text-zinc-700">{currentSum}</span>
+              <span className="text-zinc-400 text-xs ml-2">(one addition, one subtraction)</span>
+            </motion.div>
+          )}
+          {phase === "manual" && (
+            <span className="text-sm text-zinc-500">
+              Window sum: <span className="font-bold text-sky-600 font-mono">{currentSum}</span>
+            </span>
+          )}
+        </AnimatePresence>
       </div>
 
       {phase === "manual" && (
@@ -390,10 +413,7 @@ function SlidingWindowExplorer() {
             className="px-3 py-1.5 rounded-lg border border-zinc-200 text-sm disabled:opacity-30 hover:border-sky-300 transition-colors">
             ← Slide left
           </button>
-          <div className="flex-1 text-center text-sm text-zinc-600">
-            Window sum: <span className="font-bold text-sky-600 font-mono">{currentSum}</span>
-            <span className="text-zinc-400 ml-2">(position {windowStart})</span>
-          </div>
+          <div className="flex-1 text-center text-xs text-zinc-400">position {windowStart}</div>
           <button onClick={() => setWindowStart(s => Math.min(maxStart, s + 1))} disabled={windowStart === maxStart}
             className="px-3 py-1.5 rounded-lg border border-zinc-200 text-sm disabled:opacity-30 hover:border-sky-300 transition-colors">
             Slide right →
@@ -405,18 +425,18 @@ function SlidingWindowExplorer() {
         <button onClick={startSlide}
           className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-sm font-semibold transition-colors mb-4"
         >
-          ⚡ Watch sliding window algorithm →
+          ⚡ Watch O(1) updates →
         </button>
       )}
 
       {phase === "slide" && (
-        <div className="text-sm text-zinc-500 animate-pulse mb-4">
-          Sum = {currentSum} — sliding from left to right, adding one, removing one…
+        <div className="text-xs text-zinc-400 mb-4 animate-pulse">
+          Each step: subtract left element, add right element — O(1), not O(k)…
         </div>
       )}
 
       {phase === "done" && (
-        <InsightBox text={`Max sum is ${maxSum} starting at index ${maxSumStart}. The window never recomputes from scratch — it adds the new right element and subtracts the old left one. That's why it's O(n), not O(n·k).`} />
+        <InsightBox text={`Max sum is ${maxSum} at position ${maxSumStart}. The key insight: when the window moves right, subtract the element leaving the left and add the element entering the right. One subtraction + one addition = O(1) per step → O(n) total. Recomputing the full sum each time would be O(n·k).`} />
       )}
 
       <ResetButton onClick={reset} />
@@ -436,21 +456,28 @@ function BinarySearchExplorer() {
   const [lastGuess, setLastGuess] = useState<number | null>(null);
   const [hint, setHint] = useState("");
   const [won, setWon] = useState(false);
+  const [history, setHistory] = useState<string[]>([]);
 
   const mid = Math.floor((lo + hi) / 2);
 
-  function guess(pick: "lo" | "mid" | "hi") {
-    const val = pick === "lo" ? lo : pick === "hi" ? hi : mid;
-    setLastGuess(val);
+  function guess() {
+    setLastGuess(mid);
     setGuesses(g => g + 1);
-    if (val === target) { setWon(true); return; }
-    if (val < target) { setLo(val + 1); setHint("Too low — go higher"); }
-    else { setHi(val - 1); setHint("Too high — go lower"); }
+    if (mid === target) { setWon(true); return; }
+    if (mid < target) {
+      setHistory(h => [...h, `${mid} → too low (halve: ${mid+1}–${hi})`]);
+      setLo(mid + 1);
+      setHint("Too low");
+    } else {
+      setHistory(h => [...h, `${mid} → too high (halve: ${lo}–${mid-1})`]);
+      setHi(mid - 1);
+      setHint("Too high");
+    }
   }
 
   function reset() {
     setLo(1); setHi(100); setGuesses(0);
-    setLastGuess(null); setHint(""); setWon(false);
+    setLastGuess(null); setHint(""); setWon(false); setHistory([]);
   }
 
   const rangeWidth = hi - lo + 1;
@@ -459,11 +486,9 @@ function BinarySearchExplorer() {
     <div className="max-w-xl mx-auto">
       <h2 className="text-lg font-bold text-zinc-800 mb-1">Guess my number</h2>
       <p className="text-zinc-500 text-sm mb-5">
-        I'm thinking of a number between 1 and 100. Use binary search — always guess the midpoint.
-        Watch the remaining possibilities shrink.
+        I&apos;m thinking of a number between 1 and 100. Always guess the midpoint — watch the search space halve each time.
       </p>
 
-      {/* Range visualizer */}
       <div className="mb-5">
         <div className="flex justify-between text-xs text-zinc-500 mb-1">
           <span>{lo}</span>
@@ -483,21 +508,22 @@ function BinarySearchExplorer() {
         </div>
       </div>
 
-      {!won && (
-        <div className="flex gap-3 mb-4">
-          {lo !== hi && (
-            <button onClick={() => guess("mid")}
-              className="flex-1 px-4 py-3 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-sm font-semibold transition-colors">
-              Guess {mid}
-            </button>
-          )}
-          {lo === hi && (
-            <button onClick={() => guess("mid")}
-              className="flex-1 px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold transition-colors">
-              It must be {mid}!
-            </button>
-          )}
+      {history.length > 0 && (
+        <div className="mb-4 space-y-1 max-h-28 overflow-y-auto">
+          {history.map((h, i) => (
+            <div key={i} className="text-xs font-mono text-zinc-500 bg-zinc-50 px-2 py-1 rounded-lg border border-zinc-100">
+              {i + 1}. {h}
+            </div>
+          ))}
         </div>
+      )}
+
+      {!won && (
+        <button onClick={guess}
+          className="w-full px-4 py-3 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-sm font-semibold transition-colors mb-3"
+        >
+          {lo === hi ? `It must be ${mid}!` : `Guess ${mid}`}
+        </button>
       )}
 
       <AnimatePresence>
@@ -505,9 +531,8 @@ function BinarySearchExplorer() {
           <motion.div initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }}
             className="text-sm text-zinc-600 mb-3 flex items-center gap-2"
           >
-            <span>{lastGuess}</span>
-            <span className={`font-semibold ${hint.includes("low") ? "text-sky-600" : "text-red-500"}`}>
-              {hint.includes("low") ? "↑ Too low" : "↓ Too high"}
+            <span className={`font-semibold ${hint === "Too low" ? "text-sky-600" : "text-red-500"}`}>
+              {hint === "Too low" ? "↑ Too low" : "↓ Too high"}
             </span>
             <span className="text-zinc-400 ml-auto">Guesses: {guesses}</span>
           </motion.div>
@@ -523,7 +548,7 @@ function BinarySearchExplorer() {
             <div className="font-bold text-emerald-800">Got it in {guesses} {guesses === 1 ? "guess" : "guesses"}!</div>
             <div className="text-emerald-600 text-sm">The number was {target}.</div>
           </motion.div>
-          <InsightBox text={`100 numbers, at most 7 guesses. Because you halve the range each time: 100 → 50 → 25 → 13 → 7 → 4 → 2 → 1. That's log₂(100) ≈ 7. This is why binary search is O(log n).`} />
+          <InsightBox text={`100 numbers, at most 7 guesses. Each guess halves the range: 100→50→25→13→7→4→2→1. That's log₂(100) ≈ 7. Linear search would need up to 100 guesses. Binary search is O(log n) — an exponentially better guarantee.`} />
         </>
       )}
 
@@ -548,7 +573,6 @@ function StackExplorer() {
   const seq = STACK_SEQUENCES[seqIdx];
   const [step, setStep] = useState(-1);
   const [stack, setStack] = useState<string[]>([]);
-  const [started, setStarted] = useState(false);
   const [guess, setGuess] = useState<"valid" | "invalid" | null>(null);
   const [done, setDone] = useState(false);
   const [mismatch, setMismatch] = useState(false);
@@ -574,7 +598,7 @@ function StackExplorer() {
   }
 
   function reset() {
-    setStep(-1); setStack([]); setStarted(false);
+    setStep(-1); setStack([]);
     setGuess(null); setDone(false); setMismatch(false);
   }
 
@@ -584,11 +608,9 @@ function StackExplorer() {
     <div className="max-w-xl mx-auto">
       <h2 className="text-lg font-bold text-zinc-800 mb-1">Balance check</h2>
       <p className="text-zinc-500 text-sm mb-5">
-        Step through the brackets one at a time. The stack keeps track.
-        At the end — is it valid?
+        Step through the brackets one at a time. The stack keeps track. At the end — is it valid?
       </p>
 
-      {/* Sequence display */}
       <div className="flex gap-2 mb-6">
         {seq.chars.map((c, i) => (
           <motion.div key={i}
@@ -602,7 +624,6 @@ function StackExplorer() {
         ))}
       </div>
 
-      {/* Stack visualization */}
       <div className="mb-5">
         <div className="text-xs text-zinc-400 mb-2 uppercase tracking-widest">Stack</div>
         <div className="flex flex-col-reverse gap-1 min-h-[80px] p-3 bg-zinc-50 rounded-xl border border-zinc-200">
@@ -673,10 +694,9 @@ function LinkedListExplorer() {
   const [step, setStep] = useState(0);
   const [done, setDone] = useState(false);
 
-  // State after each step of: prev=null,curr=0 → prev=0,curr=1 → ...
   const totalSteps = LL_VALS.length;
-  const prevIdx = step - 1; // index of "prev" (the already-reversed portion end)
-  const currIdx = step;      // index of "curr"
+  const prevIdx = step - 1;
+  const currIdx = step;
 
   function advance() {
     if (step >= totalSteps) { setDone(true); return; }
@@ -696,7 +716,6 @@ function LinkedListExplorer() {
         <code className="bg-zinc-100 px-1 rounded">next</code>) do it without extra memory.
       </p>
 
-      {/* Node chain */}
       <div className="flex items-center gap-1 mb-6 flex-wrap">
         {LL_VALS.map((v, i) => {
           const isPrev = i === prevIdx;
@@ -763,13 +782,7 @@ function LinkedListExplorer() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Trees — "Deep or Wide?"
 // Same tree, two traversal orders: DFS goes deep first, BFS goes level by level.
-// Click to watch both and feel the difference.
 // ─────────────────────────────────────────────────────────────────────────────
-//       1
-//      / \
-//     2   3
-//    / \ / \
-//   4  5 6  7
 const TREE_NODES = [
   { id: 1, x: 50,  y: 10, left: 2, right: 3 },
   { id: 2, x: 25,  y: 40, left: 4, right: 5 },
@@ -807,10 +820,8 @@ function TreesExplorer() {
         BFS sweeps level by level. Watch both — same tree, totally different paths.
       </p>
 
-      {/* SVG tree */}
       <div className="relative bg-zinc-50 rounded-2xl border border-zinc-200 p-4 mb-5" style={{ height: 180 }}>
         <svg className="absolute inset-0 w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
-          {/* Edges */}
           {TREE_NODES.filter(n => n.left || n.right).map(n => {
             const lc = TREE_NODES.find(c => c.id === n.left);
             const rc = TREE_NODES.find(c => c.id === n.right);
@@ -822,7 +833,7 @@ function TreesExplorer() {
             );
           })}
         </svg>
-        {TREE_NODES.map((n, order) => {
+        {TREE_NODES.map(n => {
           const hIdx = highlighted.indexOf(n.id);
           const isHighlighted = hIdx !== -1;
           const isDfs = mode === "dfs";
@@ -869,25 +880,39 @@ function TreesExplorer() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Dynamic Programming — "Greedy Gets It Wrong"
-// Coins [1, 6, 10], target 12.
-// Watch greedy fail, then see DP find the true optimum.
+// Dynamic Programming — "Beat the Greedy"
+// User picks coins first, then watches greedy fail, then sees DP optimal.
 // ─────────────────────────────────────────────────────────────────────────────
-const DP_COINS = [10, 6, 1];
+const DP_COINS_AVAILABLE = [10, 6, 1];
 const DP_TARGET = 12;
 
 function DPExplorer() {
-  const [phase, setPhase] = useState<"intro" | "greedy" | "dp" | "done">("intro");
+  const [phase, setPhase] = useState<"user" | "greedy" | "dp" | "done">("user");
+  const [userCoins, setUserCoins] = useState<number[]>([]);
   const [greedyCoins, setGreedyCoins] = useState<number[]>([]);
   const [dpCoins, setDpCoins] = useState<number[]>([]);
-  const [greedyStep, setGreedyStep] = useState(0);
-  const [dpStep, setDpStep] = useState(0);
 
-  function runGreedy() {
+  const userTotal = userCoins.reduce((a, b) => a + b, 0);
+  const userOver = userTotal > DP_TARGET;
+  const userExact = userTotal === DP_TARGET;
+
+  function addCoin(c: number) {
+    if (phase !== "user" || userTotal + c > DP_TARGET) return;
+    setUserCoins(prev => [...prev, c]);
+  }
+
+  function removeCoin(i: number) {
+    if (phase !== "user") return;
+    setUserCoins(prev => prev.filter((_, idx) => idx !== i));
+  }
+
+  function submitUserAnswer() {
+    if (!userExact) return;
     setPhase("greedy");
-    let rem = DP_TARGET;
+    // Run greedy animated
     const coins: number[] = [];
-    for (const c of DP_COINS) { while (rem >= c) { coins.push(c); rem -= c; } }
+    let rem = DP_TARGET;
+    for (const c of DP_COINS_AVAILABLE) { while (rem >= c) { coins.push(c); rem -= c; } }
     let idx = 0;
     const iv = setInterval(() => {
       if (idx >= coins.length) { clearInterval(iv); setGreedyCoins(coins); setPhase("dp"); return; }
@@ -895,21 +920,19 @@ function DPExplorer() {
     }, 400);
   }
 
-  function runDP() {
-    // Optimal: 6+6=2 coins
+  useEffect(() => {
+    if (phase !== "dp" || dpCoins.length > 0) return;
     const optimal = [6, 6];
     let idx = 0;
     const iv = setInterval(() => {
       if (idx >= optimal.length) { clearInterval(iv); setDpCoins(optimal); setPhase("done"); return; }
       setDpCoins(c => [...c, optimal[idx++]]);
     }, 400);
-  }
-
-  useEffect(() => { if (phase === "dp" && dpCoins.length === 0) runDP(); }, [phase]);
+    return () => clearInterval(iv);
+  }, [phase, dpCoins.length]);
 
   function reset() {
-    setPhase("intro"); setGreedyCoins([]); setDpCoins([]);
-    setGreedyStep(0); setDpStep(0);
+    setPhase("user"); setUserCoins([]); setGreedyCoins([]); setDpCoins([]);
   }
 
   const COIN_COLORS: Record<number, string> = {
@@ -920,66 +943,103 @@ function DPExplorer() {
 
   return (
     <div className="max-w-xl mx-auto">
-      <h2 className="text-lg font-bold text-zinc-800 mb-1">Greedy gets it wrong</h2>
-      <p className="text-zinc-500 text-sm mb-2">
-        Make <strong className="text-zinc-800">{DP_TARGET}¢</strong> using coins {DP_COINS.join("¢, ")}¢.
-        Use as few coins as possible.
+      <h2 className="text-lg font-bold text-zinc-800 mb-1">Beat the greedy</h2>
+      <p className="text-zinc-500 text-sm mb-1">
+        Make exactly <strong className="text-zinc-800">{DP_TARGET}¢</strong> using coins {DP_COINS_AVAILABLE.join("¢, ")}¢.
+        Use as <strong>few coins</strong> as possible.
       </p>
-      <p className="text-xs text-zinc-400 mb-5">Greedy always picks the largest coin first. Does it find the best answer?</p>
+      <p className="text-xs text-zinc-400 mb-5">Try to find the optimal solution, then see how greedy does it — and whether DP can do better.</p>
 
-      {phase === "intro" && (
-        <button onClick={runGreedy}
-          className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-white text-sm font-semibold transition-colors"
-        >
-          Run greedy →
-        </button>
+      {/* Your coins */}
+      <div className="mb-4">
+        <div className="text-xs text-zinc-500 mb-2 font-semibold uppercase tracking-wider flex items-center justify-between">
+          <span>Your pick {phase === "user" ? `(${userTotal}/${DP_TARGET}¢)` : ""}</span>
+          {phase === "user" && userCoins.length > 0 && (
+            <span className="text-zinc-400 font-normal">{userCoins.length} coin{userCoins.length !== 1 ? "s" : ""}</span>
+          )}
+        </div>
+        {phase === "user" && (
+          <div className="flex gap-2 mb-3">
+            {DP_COINS_AVAILABLE.map(c => (
+              <button key={c} onClick={() => addCoin(c)} disabled={userTotal + c > DP_TARGET}
+                className={`flex-1 py-2 rounded-xl border-2 text-sm font-bold transition-colors disabled:opacity-30 ${COIN_COLORS[c]} hover:opacity-80`}
+              >+{c}¢</button>
+            ))}
+          </div>
+        )}
+        <div className="flex gap-2 flex-wrap min-h-[48px] items-center">
+          {userCoins.map((c, i) => (
+            <motion.button key={i} initial={{ scale: 0 }} animate={{ scale: 1 }}
+              onClick={() => removeCoin(i)} disabled={phase !== "user"}
+              className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold border-2 ${COIN_COLORS[c]} ${phase === "user" ? "hover:opacity-70 cursor-pointer" : "cursor-default"}`}
+              title="Click to remove"
+            >{c}¢</motion.button>
+          ))}
+          {userCoins.length === 0 && <span className="text-xs text-zinc-300 italic">Click coins above to add them</span>}
+        </div>
+        {userExact && phase === "user" && (
+          <button onClick={submitUserAnswer}
+            className="mt-3 w-full py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white text-sm font-semibold transition-colors"
+          >
+            Submit my answer ({userCoins.length} coins) →
+          </button>
+        )}
+        {userOver && <p className="text-xs text-red-500 mt-2">Over {DP_TARGET}¢! Remove a coin.</p>}
+      </div>
+
+      {/* Greedy */}
+      {(phase === "greedy" || phase === "dp" || phase === "done") && (
+        <div className="mb-4">
+          <div className="text-xs text-zinc-500 mb-2 font-semibold uppercase tracking-wider">
+            Greedy (always picks largest coin first)
+          </div>
+          <div className="flex gap-2 items-center flex-wrap">
+            {greedyCoins.map((c, i) => (
+              <motion.div key={i} initial={{ scale: 0 }} animate={{ scale: 1 }}
+                className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold border-2 ${COIN_COLORS[c]}`}
+              >{c}¢</motion.div>
+            ))}
+            {greedyCoins.length > 0 && phase !== "greedy" && (
+              <span className="text-sm text-zinc-500 ml-1">
+                <strong>{greedyCoins.length}</strong> coins
+                {greedyCoins.length > 2 && <span className="text-amber-600 ml-1">— not optimal!</span>}
+              </span>
+            )}
+          </div>
+        </div>
       )}
 
-      {(phase === "greedy" || phase === "dp" || phase === "done") && (
-        <div className="space-y-4">
-          <div>
-            <div className="text-xs text-zinc-500 mb-2 font-semibold uppercase tracking-wider">
-              Greedy — always picks largest coin
-            </div>
-            <div className="flex gap-2 items-center flex-wrap">
-              {greedyCoins.map((c, i) => (
-                <motion.div key={i} initial={{ scale: 0 }} animate={{ scale: 1 }}
-                  className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold border-2 ${COIN_COLORS[c]}`}
-                >{c}¢</motion.div>
-              ))}
-              {greedyCoins.length > 0 && (
-                <span className="text-sm text-zinc-500">
-                  = {greedyCoins.reduce((a,b)=>a+b,0)}¢ in <strong>{greedyCoins.length}</strong> coins
-                  {phase !== "greedy" && <span className="text-amber-600 ml-1">(not optimal!)</span>}
-                </span>
-              )}
-            </div>
+      {/* DP optimal */}
+      {(phase === "dp" || phase === "done") && (
+        <div className="mb-4">
+          <div className="text-xs text-zinc-500 mb-2 font-semibold uppercase tracking-wider">
+            DP (explores all subproblems)
           </div>
-
-          {(phase === "dp" || phase === "done") && (
-            <div>
-              <div className="text-xs text-zinc-500 mb-2 font-semibold uppercase tracking-wider">
-                DP — finds true optimum
-              </div>
-              <div className="flex gap-2 items-center flex-wrap">
-                {dpCoins.map((c, i) => (
-                  <motion.div key={i} initial={{ scale: 0 }} animate={{ scale: 1 }}
-                    className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold border-2 ${COIN_COLORS[c]}`}
-                  >{c}¢</motion.div>
-                ))}
-                {dpCoins.length > 0 && (
-                  <span className="text-sm text-zinc-500">
-                    = {dpCoins.reduce((a,b)=>a+b,0)}¢ in <strong className="text-emerald-600">{dpCoins.length}</strong> coins ✓
-                  </span>
-                )}
-              </div>
-            </div>
-          )}
+          <div className="flex gap-2 items-center flex-wrap">
+            {dpCoins.map((c, i) => (
+              <motion.div key={i} initial={{ scale: 0 }} animate={{ scale: 1 }}
+                className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold border-2 ${COIN_COLORS[c]}`}
+              >{c}¢</motion.div>
+            ))}
+            {dpCoins.length > 0 && phase === "done" && (
+              <span className="text-sm text-emerald-600 font-semibold ml-1">✓ {dpCoins.length} coins (optimal)</span>
+            )}
+          </div>
         </div>
       )}
 
       {phase === "done" && (
-        <InsightBox text={`Greedy used ${greedyCoins.length} coins (10+1+1). DP found ${dpCoins.length} coins (6+6). Greedy commits early and can't backtrack. DP tries every subproblem — "what's the min coins for 1¢, 2¢... 12¢?" — and builds the answer from the ground up.`} />
+        <>
+          <div className={`p-3 rounded-xl border text-sm mb-4 ${
+            userCoins.length <= 2 ? "bg-emerald-50 border-emerald-200 text-emerald-800" : "bg-amber-50 border-amber-200 text-amber-800"
+          }`}>
+            <strong>You:</strong> {userCoins.length} coins &nbsp;·&nbsp;
+            <strong>Greedy:</strong> {greedyCoins.length} coins (10+1+1) &nbsp;·&nbsp;
+            <strong>DP:</strong> 2 coins (6+6)
+            {userCoins.length <= 2 ? " 🎉 You found optimal!" : " — DP beat you both!"}
+          </div>
+          <InsightBox text={`Greedy picks 10 first (largest), leaving 2 — needs two 1¢ coins. Total: 3 coins. DP asks: "what's the minimum coins for 1¢, 2¢, 3¢... 12¢?" and builds up: dp[6]=1, dp[12]=dp[6]+1=2. It found that 6+6 beats 10+1+1. Greedy commits early; DP considers every sub-amount.`} />
+        </>
       )}
 
       <ResetButton onClick={reset} />
@@ -988,68 +1048,135 @@ function DPExplorer() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Knapsack (demo course) — keep existing feel, simpler version
+// Knapsack — "Outsmart Greedy"
+// Items where greedy (by value/kg ratio) fails. User picks first, then sees
+// what greedy picks, then sees the true optimal — with why.
 // ─────────────────────────────────────────────────────────────────────────────
 const KS_ITEMS = [
-  { name: "💎 Diamond",  weight: 7, value: 10 },
-  { name: "🥇 Gold Bar", weight: 5, value: 8  },
-  { name: "🔋 Battery",  weight: 3, value: 5  },
+  { id: 0, name: "Ruby",    emoji: "💎", weight: 3, value: 5 },  // ratio 1.67 — greedy picks this
+  { id: 1, name: "Silver",  emoji: "🪙", weight: 2, value: 3 },
+  { id: 2, name: "Crystal", emoji: "🔮", weight: 2, value: 3 },
 ];
-const KS_CAP = 8;
+const KS_CAP = 4;
 
 function KnapsackExplorer() {
-  const [selected, setSelected] = useState<number[]>([]);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [phase, setPhase] = useState<"pick" | "greedy" | "reveal">("pick");
+  const [greedyPicked, setGreedyPicked] = useState<number[]>([]);
+  const [greedyStep, setGreedyStep] = useState(0);
 
-  function toggle(i: number) {
-    setSelected(s => s.includes(i) ? s.filter(x => x !== i) : [...s, i]);
+  const weight = [...selected].reduce((s, i) => s + KS_ITEMS[i].weight, 0);
+  const value  = [...selected].reduce((s, i) => s + KS_ITEMS[i].value, 0);
+  const over   = weight > KS_CAP;
+  const userOptimal = !over && value === 6; // Ruby = $5, Silver+Crystal = $6
+
+  function toggle(id: number) {
+    if (phase !== "pick") return;
+    setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   }
 
-  const totalWeight = selected.reduce((s, i) => s + KS_ITEMS[i].weight, 0);
-  const totalValue  = selected.reduce((s, i) => s + KS_ITEMS[i].value,  0);
-  const overCapacity = totalWeight > KS_CAP;
-  const optimal = !overCapacity && totalValue === 13; // Gold + Battery
+  function submitAndRunGreedy() {
+    setPhase("greedy");
+    // Greedy by value/weight ratio: Ruby=1.67 (pick), Silver=1.5, Crystal=1.5
+    // Ruby uses 3kg, leaves 1kg — neither Silver(2) nor Crystal(2) fit
+    const steps = [0]; // greedy picks Ruby (id=0) then gets stuck
+    let idx = 0;
+    const iv = setInterval(() => {
+      if (idx >= steps.length) { clearInterval(iv); setGreedyPicked(steps); setPhase("reveal"); return; }
+      setGreedyPicked(p => [...p, steps[idx++]]);
+    }, 600);
+  }
+
+  function reset() {
+    setSelected(new Set()); setPhase("pick");
+    setGreedyPicked([]); setGreedyStep(0);
+  }
 
   return (
     <div className="max-w-xl mx-auto">
-      <h2 className="text-lg font-bold text-zinc-800 mb-1">The thief's dilemma</h2>
-      <p className="text-zinc-500 text-sm mb-2">
-        Your bag holds <strong>{KS_CAP} kg</strong>. Pick the combination with the highest value.
+      <h2 className="text-lg font-bold text-zinc-800 mb-1">Outsmart the greedy</h2>
+      <p className="text-zinc-500 text-sm mb-1">
+        Bag capacity: <strong>{KS_CAP} kg</strong>. Pick items to maximise value.
       </p>
-      <p className="text-xs text-zinc-400 mb-5">Hint: the most valuable item isn't always the best choice.</p>
+      <p className="text-xs text-zinc-400 mb-5">The item with the best value/kg ratio isn't always the right choice.</p>
 
+      {/* Items */}
       <div className="space-y-2 mb-5">
-        {KS_ITEMS.map((item, i) => {
-          const isSel = selected.includes(i);
+        {KS_ITEMS.map(item => {
+          const isSel = selected.has(item.id);
+          const isGreedy = greedyPicked.includes(item.id);
+          const isOptimal = phase === "reveal" && (item.id === 1 || item.id === 2);
+          const ratio = (item.value / item.weight).toFixed(2);
           return (
-            <motion.button key={i} onClick={() => toggle(i)} whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}
+            <motion.button key={item.id} onClick={() => toggle(item.id)}
+              whileHover={phase === "pick" ? { scale: 1.01 } : {}}
               className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 text-left transition-colors ${
-                isSel ? "border-sky-400 bg-sky-50" : "border-zinc-200 bg-white hover:border-sky-200"
+                phase === "reveal" && isOptimal ? "border-emerald-400 bg-emerald-50" :
+                phase === "reveal" && isGreedy  ? "border-amber-300 bg-amber-50" :
+                isSel   ? "border-sky-400 bg-sky-50" :
+                          "border-zinc-200 bg-white hover:border-sky-200"
               }`}
             >
-              <div className="text-2xl">{item.name.split(" ")[0]}</div>
+              <div className="text-2xl">{item.emoji}</div>
               <div className="flex-1">
-                <div className="font-semibold text-zinc-800 text-sm">{item.name.slice(3)}</div>
-                <div className="text-xs text-zinc-400">{item.weight} kg · ${item.value} value</div>
+                <div className="font-semibold text-zinc-800 text-sm">{item.name}</div>
+                <div className="text-xs text-zinc-400">{item.weight}kg · ${item.value} · ratio {ratio}</div>
               </div>
-              <div className={`w-5 h-5 rounded-full border-2 transition-colors ${isSel ? "bg-sky-500 border-sky-500" : "border-zinc-300"}`} />
+              {phase === "pick" && (
+                <div className={`w-5 h-5 rounded-full border-2 ${isSel ? "bg-sky-500 border-sky-500" : "border-zinc-300"}`} />
+              )}
+              {phase === "reveal" && isOptimal && <span className="text-xs text-emerald-600 font-semibold">✓ optimal</span>}
+              {phase === "reveal" && isGreedy && !isOptimal && <span className="text-xs text-amber-600 font-semibold">greedy picked</span>}
             </motion.button>
           );
         })}
       </div>
 
-      <div className={`p-3 rounded-xl border text-sm font-mono transition-colors ${
-        overCapacity ? "bg-red-50 border-red-200 text-red-700" :
-        optimal      ? "bg-emerald-50 border-emerald-200 text-emerald-700" :
-                       "bg-zinc-50 border-zinc-200 text-zinc-600"
-      }`}>
-        Weight: {totalWeight}/{KS_CAP} kg &nbsp;|&nbsp; Value: ${totalValue}
-        {overCapacity && " — over capacity!"}
-        {optimal && " — optimal! 🎉"}
-      </div>
-
-      {optimal && (
-        <InsightBox text="Gold Bar + Battery Pack fits in 8 kg for $13 — more than the Diamond alone ($10). Greedy (pick highest value first) fails here. That's exactly why we need Dynamic Programming." />
+      {/* Status bar */}
+      {phase === "pick" && (
+        <div className={`p-3 rounded-xl border text-sm font-mono mb-4 transition-colors ${
+          over ? "bg-red-50 border-red-200 text-red-700" : "bg-zinc-50 border-zinc-200 text-zinc-600"
+        }`}>
+          {weight}/{KS_CAP} kg · ${value}
+          {over && " — over capacity!"}
+        </div>
       )}
+
+      {phase === "pick" && !over && selected.size > 0 && (
+        <button onClick={submitAndRunGreedy}
+          className="w-full py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white text-sm font-semibold transition-colors mb-4"
+        >
+          Lock in my answer ({selected.size} item{selected.size > 1 ? "s" : ""}, ${value}) — then see greedy
+        </button>
+      )}
+
+      {phase === "greedy" && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+          className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm mb-4 animate-pulse"
+        >
+          Greedy runs: Ruby has best ratio (1.67) → picks Ruby (3kg, $5). Remaining: 1kg. Silver needs 2kg — doesn&apos;t fit. Crystal needs 2kg — doesn&apos;t fit. Stuck at $5.
+        </motion.div>
+      )}
+
+      {phase === "reveal" && (
+        <>
+          <div className={`p-3 rounded-xl border text-sm mb-4 ${
+            userOptimal ? "bg-emerald-50 border-emerald-200 text-emerald-800" : "bg-sky-50 border-sky-200 text-sky-800"
+          }`}>
+            <div className="font-semibold mb-1">
+              {userOptimal ? "🎉 You found optimal!" : "Here's the breakdown:"}
+            </div>
+            <div className="space-y-0.5 text-xs">
+              <div>Your pick: {[...selected].map(i => KS_ITEMS[i].name).join(" + ") || "nothing"} → ${value}</div>
+              <div>Greedy: Ruby → ${5} (3kg used, 1kg left — wasted)</div>
+              <div className="text-emerald-700 font-semibold">Optimal: Silver + Crystal → 2+2=4kg, $6</div>
+            </div>
+          </div>
+          <InsightBox text="Greedy picks Ruby (ratio 1.67 — highest value per kg), but 3kg leaves only 1kg — not enough for Silver or Crystal (2kg each). Silver+Crystal together fill the bag exactly (4kg) for $6. Greedy can't backtrack once it commits. Dynamic Programming tries every combination and guarantees the global optimum." />
+        </>
+      )}
+
+      <ResetButton onClick={reset} />
     </div>
   );
 }
