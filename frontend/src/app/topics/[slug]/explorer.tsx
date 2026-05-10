@@ -30,142 +30,183 @@ function ResetButton({ onClick }: { onClick: () => void }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Arrays & Hashing — "Find the Duplicate"
-// Click through the array to find a duplicate. Feel the O(n²) pain, then watch
-// a hash set do it instantly.
+// Arrays & Hashing — "Two Sum: Guide the Algorithm"
+// User walks through the complement trick step by step:
+// for each element, check complement → if miss, store → repeat.
 // ─────────────────────────────────────────────────────────────────────────────
-const AH_ARRAY = [4, 7, 2, 9, 1, 8, 3, 4, 5, 6];
-const AH_DUPLICATE = 4;
+const TS_NUMS = [3, 5, 2, 8, 1, 7];
+const TS_TARGET = 10;
+// Trace: 3→miss, 5→miss, 2→miss, 8→comp=2 found at idx 2 → answer [2,3]
 
 function ArraysHashingExplorer() {
-  const [checked, setChecked] = useState<number[]>([]);
-  const [found, setFound] = useState<number | null>(null);
-  const [phase, setPhase] = useState<"manual" | "hash" | "done">("manual");
-  const [hashIdx, setHashIdx] = useState(-1);
-  const [hashSet, setHashSet] = useState<number[]>([]);
-  const [hashFound, setHashFound] = useState(false);
-  const [comparisons, setComparisons] = useState(0);
+  const [step, setStep]             = useState(0);
+  const [phase, setPhase]           = useState<"check" | "store" | "done">("check");
+  const [map, setMap]               = useState<Record<number, number>>({});
+  const [checkResult, setCheckResult] = useState<"hit" | "miss" | null>(null);
+  const [found, setFound]           = useState<{ idxA: number; idxB: number } | null>(null);
+  const [wrongOrder, setWrongOrder] = useState(false);
 
-  function handleClick(idx: number) {
-    if (phase !== "manual" || found !== null) return;
-    if (checked.includes(idx)) return;
-    const next = [...checked, idx];
-    setChecked(next);
-    // Count how many comparisons this click causes (compare with all previous)
-    setComparisons(c => c + next.length - 1);
-    const seen = new Set<number>();
-    for (const i of next) {
-      if (seen.has(AH_ARRAY[i])) { setFound(AH_ARRAY[i]); return; }
-      seen.add(AH_ARRAY[i]);
+  const cur  = TS_NUMS[step];
+  const comp = TS_TARGET - cur;
+
+  function handleCheck() {
+    if (phase !== "check") return;
+    setWrongOrder(false);
+    if (comp in map) {
+      setCheckResult("hit");
+      setFound({ idxA: map[comp], idxB: step });
+      setPhase("done");
+    } else {
+      setCheckResult("miss");
+      setPhase("store");
     }
   }
 
-  function runHash() {
-    setPhase("hash");
-    setHashIdx(0);
-    setHashSet([]);
-    setHashFound(false);
+  function handleStore() {
+    if (phase === "check") { setWrongOrder(true); return; }
+    if (phase !== "store") return;
+    setMap(m => ({ ...m, [cur]: step }));
+    setStep(s => s + 1);
+    setPhase("check");
+    setCheckResult(null);
+    setWrongOrder(false);
   }
-
-  useEffect(() => {
-    if (phase !== "hash" || hashFound) return;
-    if (hashIdx >= AH_ARRAY.length) return;
-    const val = AH_ARRAY[hashIdx];
-    const timer = setTimeout(() => {
-      if (hashSet.includes(val)) {
-        setHashFound(true);
-        setPhase("done");
-      } else {
-        setHashSet(s => [...s, val]);
-        setHashIdx(i => i + 1);
-      }
-    }, 220);
-    return () => clearTimeout(timer);
-  }, [phase, hashIdx, hashSet, hashFound]);
 
   function reset() {
-    setChecked([]); setFound(null); setPhase("manual");
-    setHashIdx(-1); setHashSet([]); setHashFound(false); setComparisons(0);
+    setStep(0); setPhase("check"); setMap({});
+    setCheckResult(null); setFound(null); setWrongOrder(false);
   }
+
+  const mapEntries = Object.entries(map) as [string, number][];
 
   return (
     <div className="max-w-xl mx-auto">
-      <h2 className="text-lg font-bold text-zinc-800 mb-1">Find the duplicate</h2>
+      <h2 className="text-lg font-bold text-zinc-800 mb-1">Two Sum — guide the algorithm</h2>
       <p className="text-zinc-500 text-sm mb-5">
-        Click cards to check them. Find the number that appears twice.
-        Each click compares against all previously checked values.
+        Target: <strong className="text-zinc-700">{TS_TARGET}</strong>.
+        For each element: check if its complement is in the map, then store it.
+        Find the pair that sums to {TS_TARGET}.
       </p>
 
-      <div className="flex flex-wrap gap-2 mb-4">
-        {AH_ARRAY.map((n, i) => {
-          const isChecked = checked.includes(i);
-          const isFound = found !== null && n === found;
-          const isHashCurrent = phase === "hash" && i === hashIdx;
-          const isHashSeen = phase !== "manual" && hashSet.includes(n) && !isHashCurrent;
-          const isHashFoundItem = hashFound && n === AH_DUPLICATE;
+      {/* Array cards */}
+      <div className="flex gap-2 mb-5">
+        {TS_NUMS.map((n, i) => {
+          const isCurrent = i === step && phase !== "done";
+          const isFoundPair = found && (i === found.idxA || i === found.idxB);
+          const isPast = i < step && !isFoundPair;
           return (
-            <motion.button
-              key={i}
-              onClick={() => handleClick(i)}
-              whileHover={phase === "manual" && !found ? { scale: 1.08 } : {}}
-              whileTap={phase === "manual" && !found ? { scale: 0.95 } : {}}
-              className={`w-12 h-12 rounded-xl text-sm font-bold border-2 transition-all ${
-                isHashFoundItem ? "bg-red-500 border-red-400 text-white scale-110 shadow-lg" :
-                isHashCurrent  ? "bg-sky-400 border-sky-300 text-white animate-pulse" :
-                isHashSeen     ? "bg-sky-100 border-sky-300 text-sky-700" :
-                isFound        ? "bg-red-100 border-red-400 text-red-700 scale-110" :
-                isChecked      ? "bg-zinc-200 border-zinc-300 text-zinc-500" :
-                                 "bg-white border-zinc-200 text-zinc-700 hover:border-sky-300 cursor-pointer"
-              }`}
-            >
-              {n}
-            </motion.button>
+            <div key={i} className={`w-12 h-14 rounded-xl flex flex-col items-center justify-center border-2 transition-all duration-200 ${
+              isFoundPair ? "bg-emerald-100 border-emerald-400 text-emerald-800 scale-110 shadow-md" :
+              isCurrent   ? "bg-sky-100 border-sky-400 text-sky-800 scale-105 shadow-sm" :
+              isPast      ? "bg-zinc-100 border-zinc-200 text-zinc-400" :
+                            "bg-white border-zinc-200 text-zinc-600"
+            }`}>
+              <span className="text-sm font-bold">{n}</span>
+              <span className="text-[9px] text-zinc-400">[{i}]</span>
+            </div>
           );
         })}
       </div>
 
-      <div className="text-xs text-zinc-400 mb-3">
-        Comparisons made: <span className="font-mono font-bold text-zinc-600">{comparisons}</span>
-        {comparisons > 0 && <span className="ml-2 text-zinc-300">(worst case for {checked.length} items: {checked.length * (checked.length - 1) / 2})</span>}
+      {/* Hash map display */}
+      <div className="bg-zinc-50 border border-zinc-200 rounded-xl p-3 mb-4">
+        <div className="text-xs font-semibold text-zinc-500 mb-2">
+          Hash map <span className="font-normal text-zinc-400">value → index</span>
+        </div>
+        <div className="flex flex-wrap gap-2 min-h-[28px] items-center">
+          {mapEntries.length === 0
+            ? <span className="text-xs text-zinc-300 italic">empty {"{}"}</span>
+            : mapEntries.map(([val, idx]) => (
+              <motion.span
+                key={val}
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className={`px-2 py-1 rounded-lg text-xs font-mono border ${
+                  found && Number(val) === TS_NUMS[found.idxA]
+                    ? "bg-emerald-100 border-emerald-300 text-emerald-700"
+                    : "bg-sky-50 border-sky-200 text-sky-700"
+                }`}
+              >
+                {val} → [{idx}]
+              </motion.span>
+            ))
+          }
+        </div>
       </div>
 
+      {/* Step instructions */}
+      {phase !== "done" && (
+        <div className="bg-white border border-zinc-200 rounded-xl p-4 mb-4">
+          <div className="text-sm text-zinc-600 mb-3">
+            Current: <strong className="text-sky-700">{cur}</strong> at [{step}]
+            {"  ·  "}
+            Complement: {TS_TARGET} − {cur} = <strong className="text-amber-600">{comp}</strong>
+          </div>
+
+          <div className="flex gap-3 flex-wrap">
+            <button
+              onClick={handleCheck}
+              disabled={phase !== "check"}
+              className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
+                phase === "check"
+                  ? "bg-sky-600 hover:bg-sky-500 text-white"
+                  : "bg-zinc-100 text-zinc-400 cursor-not-allowed"
+              }`}
+            >
+              Is {comp} in the map?
+            </button>
+
+            <button
+              onClick={handleStore}
+              disabled={phase !== "store"}
+              className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
+                phase === "store"
+                  ? "bg-amber-500 hover:bg-amber-400 text-white"
+                  : "bg-zinc-100 text-zinc-400 cursor-not-allowed"
+              }`}
+            >
+              Store {cur} → [{step}]
+            </button>
+          </div>
+
+          {wrongOrder && (
+            <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+              className="text-xs text-red-500 mt-2"
+            >
+              Check the complement first — always check before storing, or you might pair an element with itself.
+            </motion.p>
+          )}
+
+          <AnimatePresence>
+            {checkResult === "miss" && (
+              <motion.p key="miss" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
+                className="text-sm text-zinc-500 mt-2"
+              >
+                ✗ <strong>{comp}</strong> is not in the map. Store <strong>{cur}</strong> for future elements to find.
+              </motion.p>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
+
+      {/* Found */}
       <AnimatePresence>
-        {found && phase === "manual" && (
-          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
-            className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm mb-4"
+        {phase === "done" && found && (
+          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+            className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 mb-4"
           >
-            ✓ Found <strong>{found}</strong> with <strong>{comparisons}</strong> comparisons.{" "}
-            Now watch how a hash set does it — one O(1) check per element:
+            <div className="text-emerald-800 font-bold mb-1">Pair found!</div>
+            <div className="text-sm text-emerald-700 mb-2">
+              <strong>{TS_NUMS[found.idxA]}</strong> [idx {found.idxA}] + <strong>{TS_NUMS[found.idxB]}</strong> [idx {found.idxB}] = {TS_TARGET}
+            </div>
+            <div className="text-xs text-emerald-600 leading-relaxed">
+              One pass, {step + 1} hash-map lookups — each O(1). We checked complement <em>before</em> storing,
+              so no element could pair with itself. Brute force would need up to{" "}
+              {(TS_NUMS.length * (TS_NUMS.length - 1)) / 2} pair checks for this array.
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
-
-      {found && phase === "manual" && (
-        <button onClick={runHash}
-          className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-sm font-semibold transition-colors mb-4"
-        >
-          ⚡ Run Hash Set →
-        </button>
-      )}
-
-      {phase === "hash" && !hashFound && (
-        <div className="text-sm text-zinc-500 mb-3 animate-pulse">
-          Scanning... is <strong className="text-sky-700">{AH_ARRAY[hashIdx]}</strong> in the set? {hashSet.length > 0 ? `{${hashSet.join(", ")}}` : "{}"}
-        </div>
-      )}
-
-      {phase !== "manual" && (
-        <div className="flex flex-wrap gap-2 mb-4">
-          <span className="text-xs text-zinc-400 mr-2 self-center">Hash set:</span>
-          {hashSet.map((v, i) => (
-            <span key={i} className="px-2 py-0.5 rounded-lg bg-sky-100 border border-sky-200 text-sky-700 text-xs font-mono">{v}</span>
-          ))}
-        </div>
-      )}
-
-      {phase === "done" && (
-        <InsightBox text={`You made ${comparisons} comparisons. The hash set found it in ${hashIdx + 1} element checks — one O(1) lookup per element. That's O(n) vs your O(n²) approach. For 1000 elements: 1000 hash checks vs up to 500,000 comparisons.`} />
-      )}
 
       <ResetButton onClick={reset} />
     </div>
